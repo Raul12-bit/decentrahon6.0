@@ -42,7 +42,7 @@ def test_swiglu_matches_pytorch(dtype, shape):
 
 @pytest.mark.parametrize("rows,vocab,chunk", [(300, 151936, 128), (37, 5003, 16)])
 def test_fused_linear_cross_entropy(rows, vocab, chunk):
-    from solution.triton_cross_entropy import (fused_linear_cross_entropy,
+    from solution.kernels.cross_entropy import (fused_linear_cross_entropy,
                                                reference_linear_cross_entropy)
 
     torch.manual_seed(0)
@@ -79,7 +79,7 @@ def test_fused_linear_cross_entropy(rows, vocab, chunk):
 
 
 def test_add_rmsnorm_forward_backward():
-    from solution.triton_ops import add_rmsnorm, ref_add_rmsnorm
+    from solution.kernels.rmsnorm import add_rmsnorm, ref_add_rmsnorm
 
     torch.manual_seed(0)
     resid = torch.randn(333, 1536, device="cuda", requires_grad=True)
@@ -101,7 +101,7 @@ def test_add_rmsnorm_forward_backward():
 
 @pytest.mark.parametrize("rotate,with_lora", [(True, True), (True, False), (False, True)])
 def test_rope_lora_scatter(rotate, with_lora):
-    from solution.triton_ops import ref_rope, rope_lora_scatter
+    from solution.kernels.rope import ref_rope, rope_lora_scatter
 
     torch.manual_seed(0)
     batch, seq, heads, dim = 4, 37, 12, 128
@@ -136,7 +136,7 @@ def test_rope_lora_scatter(rotate, with_lora):
 
 
 def test_fp16_swiglu():
-    from solution.triton_ops import swiglu
+    from solution.kernels.swiglu import swiglu
 
     torch.manual_seed(0)
     g = (torch.randn(513, 8960, device="cuda") * 3).half().requires_grad_(True)
@@ -173,7 +173,7 @@ def _linear4bit(out_features, in_features, bias=False):
 @pytest.mark.parametrize("shape", [(8960, 1536), (256, 1536), (1536, 8960)])
 def test_nf4_dequant_is_bitsandbytes_bit_for_bit(shape):
     pytest.importorskip("bitsandbytes")
-    from solution.triton_nf4_lora import dequantize_nf4, nf4_eligible, reference_dequantize
+    from solution.kernels.nf4 import dequantize_nf4, nf4_eligible, reference_dequantize
 
     layer = _linear4bit(*shape)
     assert nf4_eligible(layer)
@@ -182,7 +182,7 @@ def test_nf4_dequant_is_bitsandbytes_bit_for_bit(shape):
 
 def test_nf4_linear_matches_bitsandbytes_forward_backward():
     pytest.importorskip("bitsandbytes")
-    from solution.triton_nf4_lora import nf4_linear
+    from solution.kernels.nf4 import nf4_linear
 
     layer = _linear4bit(256, 1536, bias=True)
     x = torch.randn(700, 1536, device="cuda").half().requires_grad_(True)
@@ -207,7 +207,7 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2():
     from transformers import Qwen2Config, Qwen2ForCausalLM
 
     import solution
-    from solution import patch_model
+    from solution.patches import patch_qwen as patch_model
 
     torch.manual_seed(0)
     cfg = Qwen2Config(vocab_size=1000, hidden_size=256, intermediate_size=640,

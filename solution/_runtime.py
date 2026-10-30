@@ -47,6 +47,11 @@ VERBOSE = _flag("SOUP_KERNELS_VERBOSE", False)
 INTERPRET = os.environ.get("TRITON_INTERPRET") == "1"
 
 
+def next_pow2(n: int) -> int:
+    """Smallest power of two >= n (Triton block sizes must be powers of two)."""
+    return 1 << max(0, int(n) - 1).bit_length()
+
+
 def log(message: str) -> None:
     print(f"[solution] {message}", file=sys.stderr, flush=True)
 

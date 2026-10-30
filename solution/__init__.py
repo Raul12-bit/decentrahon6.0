@@ -1,15 +1,18 @@
 """Our solution: Triton kernels for Soup's 4-bit Qwen2 LoRA run on a Kaggle T4.
 
-The harness imports this package and calls `apply()` once, in the same process as `soup train`,
-before Soup builds the model and the trainer.
-
-What `apply()` installs (details in each module's docstring):
-- patch_model.py          the fused training forward (no pad tokens, no [B, S, V] logits), the
-                          TRL metrics / rewind hook, the fp16 copy of the tied embedding table,
-                          kernel pre-compilation while the model loads;
-- triton_cross_entropy.py lm_head + cross-entropy + entropy/accuracy in token chunks (Module 1);
-- triton_ops.py           residual add + RMSNorm, LoRA add + RoPE, fp16 SwiGLU (Module 2);
-- triton_nf4_lora.py      NF4 double-quant unpacking in one kernel (Module 3).
+    solution/
+    ├── apply.py              apply(): the single entry point the harness calls
+    ├── kernels/              the @triton.jit kernels and their autograd functions
+    │   ├── rmsnorm.py        residual add + RMSNorm (fwd + bwd)
+    │   ├── rope.py           LoRA add + RoPE + scatter to SDPA's layout (fwd + bwd)
+    │   ├── swiglu.py         fp16 SwiGLU, backward in place (not counted as our own kernel)
+    │   ├── cross_entropy.py  chunked lm_head + cross-entropy + TRL / rewind telemetry
+    │   └── nf4.py            NF4 double-quant unpacking (+ 4-bit gate/up/down matmuls)
+    ├── patches/patch_qwen.py the fused Qwen2 training forward and the trainer hooks
+    ├── warmup.py             compile + self-check the kernels while the model loads
+    ├── _runtime.py           feature switches (SOUP_KERNELS_*) and capability checks
+    ├── swiglu.py             the starter kit's example, as shipped (not used by apply())
+    └── test_kernels.py       kernels vs PyTorch / bitsandbytes, and a tiny-model end-to-end test
 
 The rules in short (the README and the task statement have the full ones):
 - our own `@triton.jit` kernels, defined in this folder, run in every measured run and together
@@ -18,39 +21,10 @@ The rules in short (the README and the task statement have the full ones):
 - no ready-made kernel libraries (unsloth, liger-kernel, xformers, flash-attn, torchao, ...);
 - the task stays the same: model, data, batches and their order, steps, LoRA, optimizer, Soup's
   settings and outputs; no other GPU, no background processes, no tricks with the measurement.
-
-Set SOUP_KERNELS=0 to make apply() a no-op (plain base Soup) for A/B runs.
 """
 
-from __future__ import annotations
+# The function shadows the submodule of the same name: `solution.apply` is the function the
+# harness calls (`import solution; solution.apply()`).
+from .apply import apply, apply_t4_triton_patches
 
-from . import _runtime
-
-_APPLIED: list[str] = []
-
-
-def apply() -> list[str]:
-    """Install the patches. Safe to call twice; never raises (falls back to base Soup)."""
-    if _APPLIED or not _runtime.ENABLED:
-        return list(_APPLIED)
-    if not _runtime.triton_available():
-        _runtime.log("Triton is not importable: running plain Soup")
-        return []
-    try:
-        from .patch_model import install
-
-        _APPLIED.extend(install())
-    except Exception as exc:  # noqa: BLE001 - a broken patch must not break `soup train`
-        _runtime.log(f"patches not installed ({exc!r}): running plain Soup")
-        return []
-    if not _runtime.cuda_kernels_supported():
-        _runtime.log("no CUDA GPU with compute capability >= 7.5: the fast path stays off")
-    _runtime.log("installed: " + ", ".join(_APPLIED))
-    return list(_APPLIED)
-
-
-def apply_t4_triton_patches(model):
-    """Prepare an already built model by hand (outside `soup train`)."""
-    from .patch_model import apply_t4_triton_patches as prepare
-
-    return prepare(model)
+__all__ = ["apply", "apply_t4_triton_patches"]

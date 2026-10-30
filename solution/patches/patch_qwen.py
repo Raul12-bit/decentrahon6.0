@@ -9,7 +9,7 @@ Entry points (installed by `solution.apply()`):
       layout through transformers' own SDPA call with the same mask, so it computes what base
       computes (the README rules allow removing padding inside a batch);
     - RMSNorm + residual add, LoRA add + RoPE, SwiGLU, NF4 unpacking and the lm_head + loss are
-      the Triton kernels of triton_ops / triton_nf4_lora / triton_cross_entropy;
+      the Triton kernels of solution/kernels (rmsnorm, rope, swiglu, nf4, cross_entropy);
     - no [B, S, V] logits: the output carries the loss and no logits.
   Anything else (eval, generation, another model, a config the fast path does not cover) goes to
   the original forward untouched.
@@ -35,10 +35,12 @@ from typing import Any, Optional
 import torch
 import torch.nn.functional as F
 
-from . import _runtime
-from .triton_cross_entropy import IGNORE_INDEX, fused_linear_cross_entropy
-from .triton_nf4_lora import gate_up_swiglu, is_linear4bit, nf4_eligible, nf4_linear
-from .triton_ops import _next_pow2, add_rmsnorm, rope_lora_scatter, swiglu
+from .. import _runtime
+from ..kernels.cross_entropy import IGNORE_INDEX, fused_linear_cross_entropy
+from ..kernels.nf4 import gate_up_swiglu, is_linear4bit, nf4_eligible, nf4_linear
+from ..kernels.rmsnorm import add_rmsnorm
+from ..kernels.rope import rope_lora_scatter
+from ..kernels.swiglu import swiglu
 
 STEP_ATTR = "_soup_chunked_step"  # soup_cli.utils.stream_loss_chunk.STEP_ATTR
 _ORIGINALS: dict[str, Any] = {}
@@ -270,7 +272,7 @@ def _fast_forward(lm, input_ids, attention_mask, labels, num_items_in_batch, req
                                  attention_mask=attention_mask, past_key_values=None,
                                  position_ids=position_ids)
     ctx = _LayerCtx(batch, seq, dst, cos[0], sin[0], cos_row, mask,
-                    _next_pow2(config.num_attention_heads))
+                    _runtime.next_pow2(config.num_attention_heads))
 
     resid, delta = hidden, None
     for layer in model.layers[: config.num_hidden_layers]:
@@ -517,7 +519,7 @@ def apply_t4_triton_patches(model) -> dict:
     if report["fast_path"]:
         # Compiled and checked against PyTorch on this GPU (normally already done by the
         # warm-up thread while the model loaded); any problem -> plain Soup, not a crash.
-        from .warmup import ensure_checked
+        from ..warmup import ensure_checked
 
         problems = ensure_checked(lm.config, lm.lm_head.weight.device)
         if problems:
@@ -619,7 +621,7 @@ def install() -> list[str]:
 
 def _wrapped_setup(self, *args, **kwargs):
     if _runtime.WARMUP:
-        from .warmup import start_background_warmup
+        from ..warmup import start_background_warmup
 
         start_background_warmup(getattr(getattr(self, "config", None), "base", None))
     return _ORIGINALS["setup"](self, *args, **kwargs)

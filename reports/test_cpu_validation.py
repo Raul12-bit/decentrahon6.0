@@ -4,8 +4,10 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from solution.triton_cross_entropy import fused_linear_cross_entropy, reference_linear_cross_entropy
-from solution.triton_ops import add_rmsnorm, ref_add_rmsnorm, ref_rope, rope_lora_scatter, swiglu
+from solution.kernels.cross_entropy import fused_linear_cross_entropy, reference_linear_cross_entropy
+from solution.kernels.rmsnorm import add_rmsnorm, ref_add_rmsnorm
+from solution.kernels.rope import ref_rope, rope_lora_scatter
+from solution.kernels.swiglu import swiglu
 
 
 @pytest.mark.parametrize("rows,vocab,chunk", [(1, 11, 1), (17, 67, 4), (7, 2053, 3)])
@@ -102,8 +104,13 @@ def test_swiglu_forward_backward(shape):
     torch.testing.assert_close(u.grad, u2.grad, atol=1e-2, rtol=1e-2)
 
 
-def test_apply_without_triton_is_idempotent():
+def test_apply_without_triton_is_idempotent(monkeypatch):
+    import sys
     import solution
+    from solution import _runtime
+    # Simulate a machine without Triton, whatever this one has installed.
+    monkeypatch.setattr(sys.modules["solution.apply"], "_APPLIED", [])
+    monkeypatch.setattr(_runtime, "triton_available", lambda: False)
     assert solution.apply() == []
     assert solution.apply() == []
 
@@ -141,7 +148,7 @@ def test_ce_rejects_nonpositive_chunk(chunk):
 
 
 def test_fallback_restores_rng_after_failed_fast_forward(monkeypatch):
-    from solution import patch_model as pm
+    from solution.patches import patch_qwen as pm
     # Fault injection only: verify that a failure after real dropout consumption is transactional.
     def fail(*args):
         torch.nn.functional.dropout(torch.ones(20), p=.5, training=True)
@@ -162,7 +169,7 @@ def test_fallback_restores_rng_after_failed_fast_forward(monkeypatch):
 
 
 def test_fallback_disables_failed_path_for_later_calls(monkeypatch):
-    from solution import patch_model as pm
+    from solution.patches import patch_qwen as pm
     lm = SimpleNamespace()
     calls = []
     monkeypatch.setattr(pm, "_step_reason", lambda *a: getattr(lm, "_soup_fast_reason", None))
@@ -180,7 +187,8 @@ def test_fallback_disables_failed_path_for_later_calls(monkeypatch):
 @pytest.mark.parametrize("disabled", [True, False])
 def test_manual_prepare_does_not_mutate_unsupported_model(monkeypatch, disabled):
     from transformers import Qwen2Config, Qwen2ForCausalLM
-    from solution import _runtime, patch_model as pm
+    from solution import _runtime
+    from solution.patches import patch_qwen as pm
     config = Qwen2Config(vocab_size=16, hidden_size=16, intermediate_size=32,
                          num_hidden_layers=1, num_attention_heads=2,
                          num_key_value_heads=1, tie_word_embeddings=True)

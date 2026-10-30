@@ -28,13 +28,13 @@ Soup 0.77.0 / transformers 5.16.1 / peft 0.20.0 / bitsandbytes 0.50.2 показ
 
 | Что | Где | Как устроено |
 |---|---|---|
-| lm_head + CE + метрики по чанкам | [`triton_cross_entropy.py`](solution/triton_cross_entropy.py) | Логиты считаются кусками по 256 токенов (cuBLAS fp16). Кернел `_cross_entropy_fwd_bwd_inplace_kernel` (одна программа на токен) за один проход по словарю считает online max / sum-exp в fp32, энтропию (`entropy` TRL), argmax (`mean_token_accuracy` TRL) и CE токена (потери строк для `rewind.jsonl`), вторым проходом **на месте** записывает `dL/dz` поверх логитов, затем cuBLAS даёт градиент по скрытому состоянию. Тензор `[B, S, V]` не создаётся вообще. Градиент строится только для строк с меткой (они сортируются вперёд). |
-| RMSNorm + сложение остатка | [`triton_ops.py`](solution/triton_ops.py) | `_add_rmsnorm_fwd/bwd_kernel`: `resid + delta` (fp32 + fp16) и нормализация за один проход, `rstd` в fp32; backward по замкнутой формуле, сразу отдаёт градиент и остатку, и fp16-выходу блока. |
-| LoRA-сложение + RoPE + раскладка | [`triton_ops.py`](solution/triton_ops.py) | `_rope_lora_scatter_fwd_kernel`: `fp32(base) + fp32(lora)`, поворот `q·cos + rotate_half(q)·sin` и запись сразу в `[B, H, S, D]`, который ждёт SDPA. Backward (`_rope_gather_bwd_kernel`) применяет сопряжённый поворот (`-sin`) к градиенту — активации RoPE не хранятся. GQA: одна компиляция на q и k/v. |
-| SwiGLU в fp16 | [`triton_ops.py`](solution/triton_ops.py) | `silu(g)·u` из fp16 выходов GEMM, математика в fp32, сохраняются только `g` и `u`, backward пишет `dg`, `du` поверх них. *Это вариант SwiGLU из примера стартового кита — в долю своих кернелов мы его не засчитываем.* |
-| NF4 + double quant | [`triton_nf4_lora.py`](solution/triton_nf4_lora.py) | `_nf4_dequant_nested_kernel` за один проход делает то, на что bitsandbytes тратит три кернела: декодирует 8-битный absmax (`code2[a8]·absmax2 + offset`), оба полубайта через таблицу NF4 и пишет fp16-веса. Результат **побитно** равен `bitsandbytes.functional.dequantize_4bit` (FMA выключен, как у двух отдельных кернелов bnb). Запускается 392 раза за шаг (7 проекций × 28 слоёв × forward/backward). |
-| Удаление pad-токенов | [`patch_model.py`](solution/patch_model.py) | Все потокенные операции (нормы, проекции, LoRA, MLP, lm_head, loss) видят только реальные токены. Attention считается тем же вызовом SDPA из transformers на паддированной раскладке с той же маской, что и в базе. |
-| Хранение таблицы эмбеддинга в fp16 | [`patch_model.py`](solution/patch_model.py) | Связанные `embed_tokens`/`lm_head` хранятся один раз в fp16 (467 МБ вместо 933 МБ) — только если `fp16 → fp32` возвращает fp32-таблицу бит в бит (так и есть: Soup грузит модель в fp16, peft лишь повышает точность). Строки эмбеддинга по-прежнему выдаются в fp32; после обучения fp32-таблица возвращается. |
+| lm_head + CE + метрики по чанкам | [`kernels/cross_entropy.py`](solution/kernels/cross_entropy.py) | Логиты считаются кусками по 256 токенов (cuBLAS fp16). Кернел `_cross_entropy_fwd_bwd_inplace_kernel` (одна программа на токен) за один проход по словарю считает online max / sum-exp в fp32, энтропию (`entropy` TRL), argmax (`mean_token_accuracy` TRL) и CE токена (потери строк для `rewind.jsonl`), вторым проходом **на месте** записывает `dL/dz` поверх логитов, затем cuBLAS даёт градиент по скрытому состоянию. Тензор `[B, S, V]` не создаётся вообще. Градиент строится только для строк с меткой (они сортируются вперёд). |
+| RMSNorm + сложение остатка | [`kernels/rmsnorm.py`](solution/kernels/rmsnorm.py) | `_add_rmsnorm_fwd/bwd_kernel`: `resid + delta` (fp32 + fp16) и нормализация за один проход, `rstd` в fp32; backward по замкнутой формуле, сразу отдаёт градиент и остатку, и fp16-выходу блока. |
+| LoRA-сложение + RoPE + раскладка | [`kernels/rope.py`](solution/kernels/rope.py) | `_rope_lora_scatter_fwd_kernel`: `fp32(base) + fp32(lora)`, поворот `q·cos + rotate_half(q)·sin` и запись сразу в `[B, H, S, D]`, который ждёт SDPA. Backward (`_rope_gather_bwd_kernel`) применяет сопряжённый поворот (`-sin`) к градиенту — активации RoPE не хранятся. GQA: одна компиляция на q и k/v. |
+| SwiGLU в fp16 | [`kernels/swiglu.py`](solution/kernels/swiglu.py) | `silu(g)·u` из fp16 выходов GEMM, математика в fp32, сохраняются только `g` и `u`, backward пишет `dg`, `du` поверх них. *Это вариант SwiGLU из примера стартового кита — в долю своих кернелов мы его не засчитываем.* |
+| NF4 + double quant | [`kernels/nf4.py`](solution/kernels/nf4.py) | `_nf4_dequant_nested_kernel` за один проход делает то, на что bitsandbytes тратит три кернела: декодирует 8-битный absmax (`code2[a8]·absmax2 + offset`), оба полубайта через таблицу NF4 и пишет fp16-веса. Результат **побитно** равен `bitsandbytes.functional.dequantize_4bit` (FMA выключен, как у двух отдельных кернелов bnb). Запускается 392 раза за шаг (7 проекций × 28 слоёв × forward/backward). |
+| Удаление pad-токенов | [`patches/patch_qwen.py`](solution/patches/patch_qwen.py) | Все потокенные операции (нормы, проекции, LoRA, MLP, lm_head, loss) видят только реальные токены. Attention считается тем же вызовом SDPA из transformers на паддированной раскладке с той же маской, что и в базе. |
+| Хранение таблицы эмбеддинга в fp16 | [`patches/patch_qwen.py`](solution/patches/patch_qwen.py) | Связанные `embed_tokens`/`lm_head` хранятся один раз в fp16 (467 МБ вместо 933 МБ) — только если `fp16 → fp32` возвращает fp32-таблицу бит в бит (так и есть: Soup грузит модель в fp16, peft лишь повышает точность). Строки эмбеддинга по-прежнему выдаются в fp32; после обучения fp32-таблица возвращается. |
 | Прекомпиляция | [`warmup.py`](solution/warmup.py) | Кернелы компилируются в потоке, пока Soup грузит модель (кэш Triton в каждом замере пустой, а компиляция входит во время). Поток не трогает RNG torch (от него зависят маски dropout и порядок данных). |
 
 ### Как сохраняется качество
@@ -64,6 +64,25 @@ Soup 0.77.0 / transformers 5.16.1 / peft 0.20.0 / bitsandbytes 0.50.2 показ
   туда, где их читает rewind Soup для шага без логитов (`_soup_chunked_step`, тот же механизм, что
   у встроенного в Soup chunked loss #1693);
 - `SFTTrainerWrapper.setup` / `.train` из Soup — запуск прекомпиляции и подготовка модели.
+
+Структура пакета:
+
+```text
+solution/
+├── __init__.py            экспортирует apply() (харнесс вызывает solution.apply())
+├── apply.py               apply(): единственная точка входа, ставит патчи
+├── kernels/               @triton.jit-кернелы и их autograd-функции
+│   ├── rmsnorm.py         residual add + RMSNorm (fwd + bwd)
+│   ├── rope.py            LoRA add + RoPE + раскладка под SDPA (fwd + bwd)
+│   ├── swiglu.py          SwiGLU в fp16, backward на месте (не засчитываем как свой)
+│   ├── cross_entropy.py   lm_head + CE + телеметрия TRL / rewind кусками
+│   └── nf4.py             распаковка NF4 + 4-битные gate/up/down
+├── patches/patch_qwen.py  быстрый forward Qwen2 и хуки тренера / Soup
+├── warmup.py              компиляция и самопроверка кернелов во время загрузки
+├── _runtime.py            переключатели SOUP_KERNELS_* и проверки GPU / Triton
+├── swiglu.py              пример из стартового кита, как есть (apply() его не вызывает)
+└── test_kernels.py        кернелы против PyTorch / bitsandbytes и сквозной тест
+```
 
 Переключатели (переменные окружения, по умолчанию всё включено): `SOUP_KERNELS=0` — чистый Soup;
 `SOUP_KERNELS_UNPAD=0`, `SOUP_KERNELS_FP16_EMBED=0`, `SOUP_KERNELS_WARMUP=0`,
@@ -132,6 +151,10 @@ fp32-цепочек; общее время команды сокращается
   `pytest solution` и `check_rules.py`.
 - Слияние LoRA с распакованными весами (`W + s·B·A`) не делается намеренно: в задаче dropout 0,05
   стоит только на входе LoRA, поэтому такое слияние меняет функцию в режиме обучения.
+- Fused NF4 GEMM (распаковка весов в регистрах прямо перед `tl.dot`, как в Marlin / TileLang)
+  не делали: на T4 при M ≈ 900–2048 строк cuBLAS по fp16-весам быстрее Triton-GEMM на Turing,
+  а плотная копия весов живёт только внутри одной проекции (до 27,5 МБ), так что по памяти
+  выигрыша почти нет. Вместо этого три кернела bitsandbytes слиты в один (`kernels/nf4.py`).
 - Layer streaming (`StreamedLargeLayer`, `_prefetch_stream`) в этой задаче не используется, а
   переключать встроенные режимы Soup правила запрещают — эти пути не трогали.
 - Пересчёт MLP в backward (`SOUP_KERNELS_MLP_RECOMPUTE=1`) по оценке снижает пик ещё на ~1,5 ГБ

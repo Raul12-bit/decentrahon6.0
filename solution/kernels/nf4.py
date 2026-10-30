@@ -21,7 +21,7 @@ is the same F.linear call, so the projection outputs are unchanged.
 
 Not done on purpose: merging LoRA into the dequantized weight (`W + s * B @ A`). The task trains
 LoRA with dropout 0.05 on the LoRA input only, so `x @ (W + sBA)^T` is a different function in
-training mode; the adapter would change. LoRA stays a separate branch (see patch_model.py).
+training mode; the adapter would change. LoRA stays a separate branch (see patches/patch_qwen.py).
 
 Idea credits: blockwise NF4 / double quantization from QLoRA (Dettmers et al. 2023) and the
 bitsandbytes format; the kernel is our own.
@@ -32,8 +32,8 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from . import _runtime
-from .triton_ops import swiglu_bwd_inplace, swiglu_fwd
+from .. import _runtime
+from .swiglu import swiglu_bwd_inplace, swiglu_fwd
 
 try:
     import triton

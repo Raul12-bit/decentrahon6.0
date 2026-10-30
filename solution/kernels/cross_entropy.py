@@ -23,7 +23,7 @@ Numerics. Every per-row term is computed in fp32 from the same fp16 logits base 
 gradient is rounded to fp16 at the same point and the same scale as base: base backpropagates
 `GradScaler.scale * loss`, so the fp16 dL/dz it rounds is `(p - y) * scale / num_items`. The
 gradient here is taken in forward, so the trainer hands in the scale it is about to use (see
-patch_model.py); backward multiplies by `grad_output / scale`, which is exactly 1.0 in training.
+patches/patch_qwen.py); backward multiplies by `grad_output / scale`, which is exactly 1.0 in training.
 Rows without a label get zero gradient, so the second GEMM runs over labelled rows only: they are
 sorted first.
 
@@ -39,7 +39,7 @@ from typing import Optional, Union
 
 import torch
 
-from . import _runtime
+from .. import _runtime
 
 try:
     import triton

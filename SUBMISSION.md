@@ -16,11 +16,11 @@
 ## Our kernels
 | Kernel (`@triton.jit` name) | File | What it replaces | Share of the training time (check 4) |
 |---|---|---|---|
-| `_cross_entropy_fwd_bwd_inplace_kernel` | `solution/triton_cross_entropy.py` | `[B,S,V]` logits, ForCausalLMLoss (fp32 upcast + log_softmax + backward), TRL entropy / accuracy, rewind row losses | % |
-| `_nf4_dequant_nested_kernel` | `solution/triton_nf4_lora.py` | bitsandbytes absmax dequant + offset add + NF4 dequant (3 kernels), forward and backward | % |
-| `_add_rmsnorm_fwd_kernel`, `_add_rmsnorm_bwd_kernel` | `solution/triton_ops.py` | residual add + Qwen2RMSNorm (fp32 eager chain) | % |
-| `_rope_lora_scatter_fwd_kernel`, `_rope_gather_bwd_kernel` | `solution/triton_ops.py` | peft LoRA add + apply_rotary_pos_emb (fp32 eager chain) + pad scatter / gather | % |
-| `_swiglu_fp16_fwd_kernel`, `_swiglu_fp16_bwd_inplace_kernel` | `solution/triton_ops.py` | fp32 silu * up; a variant of the starter kit's example, **not counted** as our own | (not counted) |
+| `_cross_entropy_fwd_bwd_inplace_kernel` | `solution/kernels/cross_entropy.py` | `[B,S,V]` logits, ForCausalLMLoss (fp32 upcast + log_softmax + backward), TRL entropy / accuracy, rewind row losses | % |
+| `_nf4_dequant_nested_kernel` | `solution/kernels/nf4.py` | bitsandbytes absmax dequant + offset add + NF4 dequant (3 kernels), forward and backward | % |
+| `_add_rmsnorm_fwd_kernel`, `_add_rmsnorm_bwd_kernel` | `solution/kernels/rmsnorm.py` | residual add + Qwen2RMSNorm (fp32 eager chain) | % |
+| `_rope_lora_scatter_fwd_kernel`, `_rope_gather_bwd_kernel` | `solution/kernels/rope.py` | peft LoRA add + apply_rotary_pos_emb (fp32 eager chain) + pad scatter / gather | % |
+| `_swiglu_fp16_fwd_kernel`, `_swiglu_fp16_bwd_inplace_kernel` | `solution/kernels/swiglu.py` | fp32 silu * up; a variant of the starter kit's example, **not counted** as our own | (not counted) |
 
 Ideas taken from other kernels, with links (we wrote the code ourselves):
 - Online softmax: Milakov & Gimelshein 2018, https://arxiv.org/abs/1805.02867

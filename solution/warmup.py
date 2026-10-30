@@ -72,10 +72,11 @@ def _close(name, got, want, tol, problems):
 
 
 def compile_kernels(config, device) -> list[str]:
-    from .triton_cross_entropy import _launch_ce_kernel
-    from .triton_nf4_lora import BLOCK_BYTES, DEQUANT_WARPS, _nf4_dequant_nested_kernel
-    from .triton_ops import (_next_pow2, _norm_bwd, _norm_fwd, ref_add_rmsnorm, ref_rope,
-                             rope_lora_scatter, swiglu_bwd_inplace, swiglu_fwd)
+    from .kernels.cross_entropy import _launch_ce_kernel
+    from .kernels.nf4 import BLOCK_BYTES, DEQUANT_WARPS, _nf4_dequant_nested_kernel
+    from .kernels.rmsnorm import _norm_bwd, _norm_fwd, ref_add_rmsnorm
+    from .kernels.rope import ref_rope, rope_lora_scatter
+    from .kernels.swiglu import swiglu_bwd_inplace, swiglu_fwd
 
     hidden = int(config.hidden_size)
     n_heads = int(config.num_attention_heads)
@@ -147,7 +148,7 @@ def compile_kernels(config, device) -> list[str]:
     sin = pattern(seq, head_dim, f32, 0.5)
     rows = torch.tensor([0, 1], device=device, dtype=torch.int64)
     rotated = rope_lora_scatter(base16, lora16, cos, sin, rows, rows, 1, seq, n_heads, True,
-                                _next_pow2(n_heads))
+                                _runtime.next_pow2(n_heads))
     rotated.backward(torch.ones_like(rotated))
     x = (base16.detach().float() + lora16.detach().float()).view(2, n_heads, head_dim)
     want = ref_rope(x, cos[:2, None, :], sin[:2, None, :])

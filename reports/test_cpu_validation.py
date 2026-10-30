@@ -79,11 +79,13 @@ def test_rope_custom_positions_and_gradients(rotate, heads):
     if rotate:
         x = ref_rope(x, cos[positions, None], sin[positions, None])
     ref = torch.zeros(batch * seq, heads, dim).index_copy(0, dst, x)
-    ref = ref.view(batch, seq, heads, dim).permute(0, 2, 1, 3)
+    # SDPA's input: base rounds the fp32 RoPE output to fp16 under autocast, so does the kernel.
+    ref = ref.view(batch, seq, heads, dim).permute(0, 2, 1, 3).half()
     grad = torch.randn_like(out)
     out.backward(grad)
     ref.backward(grad)
-    torch.testing.assert_close(out, ref)
+    assert out.dtype == torch.float16
+    torch.testing.assert_close(out, ref, atol=1e-3, rtol=1e-3)
     torch.testing.assert_close(b.grad, b2.grad, atol=1e-2, rtol=1e-2)
     torch.testing.assert_close(l.grad, l2.grad, atol=1e-2, rtol=1e-2)
 

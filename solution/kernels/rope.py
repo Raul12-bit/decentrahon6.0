@@ -2,17 +2,20 @@
 
 Base Soup computes q (and v) as peft's `result + lora_B(lora_A(dropout(x))) * scaling` in fp32,
 then transformers' `q * cos + rotate_half(q) * sin` as a chain of fp32 kernels (mul, slice, neg,
-cat, mul, add), and SDPA casts the result to fp16. Here, one program per (unpadded) token:
+cat, mul, add), and autocast casts the result to fp16 for SDPA. Here, one program per
+(unpadded) token:
 
   _rope_lora_scatter_fwd_kernel
       x = fp32(base16) + fp32(lora16)               the LoRA add, in fp32 as in base
-      out = x * cos + rotate_half(x) * sin          (or x for v: no rotation)
-      written straight to [B, heads, S, D] at the token's padded position, so dropping pad tokens
-      needs no separate scatter; one launch covers all heads of a token (GQA: q with 12 heads
-      and k/v with 2 use the same compiled kernel).
+      out = fp16(x * cos + rotate_half(x) * sin)    (or fp16(x) for v: no rotation)
+      written straight to [B, heads, S, D] fp16 at the token's padded position: the tensor SDPA
+      reads, rounded once from fp32 exactly where autocast rounds it in base, so no fp32 copy and
+      no cast kernel; dropping pad tokens needs no separate scatter; one launch covers all heads
+      of a token (GQA: q with 12 heads and k/v with 2 use the same compiled kernel).
   _rope_gather_bwd_kernel
-      the transpose of the rotation, i.e. the conjugate (-sin) applied to the incoming gradient,
-      gathered back to the unpadded rows; the same fp16 gradient goes to the base projection and
+      reads SDPA's fp16 gradient (base upcasts that same fp16 gradient to fp32 before the RoPE
+      backward), applies the transpose of the rotation, i.e. the conjugate (-sin), in fp32, and
+      gathers it back to the unpadded rows; the same fp16 gradient goes to the base projection and
       to the LoRA branch (both were added in fp32). No RoPE activation is stored at all.
 
 cos/sin are the tables transformers' rotary embedding builds for the batch (positions per row),
@@ -45,7 +48,7 @@ if triton is not None:
         sin_ptr,  # *f32 [rows, D]
         cos_row_ptr,  # *i64 [T] row of cos/sin for token t
         dst_ptr,  # *i64 [T] flat index b * S + s of token t in the padded batch
-        out_ptr,  # *f32 [B, n_heads, S, D]
+        out_ptr,  # *f16 [B, n_heads, S, D]: SDPA's input
         S,
         n_heads,
         has_lora,
@@ -74,16 +77,16 @@ if triton is not None:
             c2 = tl.load(cos_ptr + crow * HEAD_DIM + HALF + j)
             s1 = tl.load(sin_ptr + crow * HEAD_DIM + j)
             s2 = tl.load(sin_ptr + crow * HEAD_DIM + HALF + j)
-            # q * cos + rotate_half(q) * sin, rotate_half(q) = cat(-q2, q1)
-            tl.store(out, x1 * c1 - x2 * s1, mask=mask)
-            tl.store(out + HALF, x2 * c2 + x1 * s2, mask=mask)
+            # q * cos + rotate_half(q) * sin, rotate_half(q) = cat(-q2, q1); rounded to fp16 once
+            tl.store(out, (x1 * c1 - x2 * s1).to(tl.float16), mask=mask)
+            tl.store(out + HALF, (x2 * c2 + x1 * s2).to(tl.float16), mask=mask)
         else:
-            tl.store(out, x1, mask=mask)
-            tl.store(out + HALF, x2, mask=mask)
+            tl.store(out, x1.to(tl.float16), mask=mask)
+            tl.store(out + HALF, x2.to(tl.float16), mask=mask)
 
     @triton.jit(do_not_specialize=["S", "n_heads", "rotate"])
     def _rope_gather_bwd_kernel(
-        gout_ptr,  # *f32 [B, n_heads, S, D] gradient of the padded rotated output
+        gout_ptr,  # *f16 [B, n_heads, S, D] SDPA's gradient of the padded rotated output
         cos_ptr,
         sin_ptr,
         cos_row_ptr,
@@ -105,8 +108,8 @@ if triton is not None:
         j = tl.arange(0, HALF)[None, :]
         mask = (heads < n_heads) & (j < HALF)
         gptr = gout_ptr + ((b * n_heads + heads) * S + s) * HEAD_DIM + j
-        g1 = tl.load(gptr, mask=mask, other=0.0)
-        g2 = tl.load(gptr + HALF, mask=mask, other=0.0)
+        g1 = tl.load(gptr, mask=mask, other=0.0).to(tl.float32)
+        g2 = tl.load(gptr + HALF, mask=mask, other=0.0).to(tl.float32)
         dst_ptrs = gin_ptr + t * n_heads * HEAD_DIM + heads * HEAD_DIM + j
         if rotate != 0:
             c1 = tl.load(cos_ptr + crow * HEAD_DIM + j)
@@ -126,7 +129,8 @@ def _kernels_ok(*tensors: torch.Tensor) -> bool:
 
 
 class RopeLoraScatterFunction(torch.autograd.Function):
-    """fp32(base16) + fp32(lora16), rotated (or not), written to padded [B, heads, S, D] fp32."""
+    """fp32(base16) + fp32(lora16), rotated (or not), rounded to fp16 and written to padded
+    [B, heads, S, D] (zeros at pad positions)."""
 
     @staticmethod
     def forward(ctx, base, lora, cos, sin, cos_row, dst, batch, seq, n_heads, rotate,
@@ -137,7 +141,7 @@ class RopeLoraScatterFunction(torch.autograd.Function):
         sin2 = sin.reshape(-1, head_dim).contiguous()
         full = n_tok == batch * seq
         out = (torch.empty if full else torch.zeros)(
-            (batch, n_heads, seq, head_dim), dtype=torch.float32, device=base.device)
+            (batch, n_heads, seq, head_dim), dtype=torch.float16, device=base.device)
         # One BLOCK_HEADS for q and k/v (the larger head count): one compiled kernel, not two.
         block_heads = max(int(block_heads or 0), _runtime.next_pow2(n_heads))
         if _kernels_ok(base) and n_tok:
@@ -158,7 +162,7 @@ class RopeLoraScatterFunction(torch.autograd.Function):
             # With one head (or one batch) reshape can alias out. Copying a permuted
             # view back into that storage is rejected by PyTorch's overlap check.
             flat = out.permute(0, 2, 1, 3).reshape(batch * seq, n_heads, head_dim).clone()
-            flat.index_copy_(0, dst, x)
+            flat.index_copy_(0, dst, x.to(torch.float16))
             out.copy_(flat.view(batch, seq, n_heads, head_dim).permute(0, 2, 1, 3))
         ctx.save_for_backward(cos2, sin2, cos_row, dst)
         ctx.meta = (n_tok, seq, n_heads, head_dim, bool(rotate), lora is not None, block_heads)
@@ -169,14 +173,17 @@ class RopeLoraScatterFunction(torch.autograd.Function):
         cos2, sin2, cos_row, dst = ctx.saved_tensors
         n_tok, seq, n_heads, head_dim, rotate, has_lora, block_heads = ctx.meta
         gin = torch.empty((n_tok, n_heads * head_dim), dtype=torch.float16, device=gout.device)
-        gout = gout.contiguous().to(torch.float32)
+        # SDPA hands back fp16 (what base upcasts before its fp32 RoPE backward). A gradient in
+        # any other dtype is rounded to fp16 here, like the fp16 output it belongs to.
+        gout = gout.to(torch.float16).contiguous()
         if _kernels_ok(gout) and n_tok:
             _rope_gather_bwd_kernel[(n_tok,)](
                 gout, cos2, sin2, cos_row, dst, gin, seq, n_heads, int(rotate),
                 HEAD_DIM=head_dim, BLOCK_HEADS=block_heads, num_warps=ROPE_WARPS,
                 enable_fp_fusion=False)
         elif n_tok:
-            g = gout.permute(0, 2, 1, 3).reshape(-1, n_heads, head_dim).index_select(0, dst)
+            g = gout.float().permute(0, 2, 1, 3).reshape(-1, n_heads, head_dim)
+            g = g.index_select(0, dst)
             if rotate:
                 c = cos2.index_select(0, cos_row)[:, None, :]
                 s = sin2.index_select(0, cos_row)[:, None, :]

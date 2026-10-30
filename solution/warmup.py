@@ -151,8 +151,9 @@ def compile_kernels(config, device) -> list[str]:
                                 _runtime.next_pow2(n_heads))
     rotated.backward(torch.ones_like(rotated))
     x = (base16.detach().float() + lora16.detach().float()).view(2, n_heads, head_dim)
-    want = ref_rope(x, cos[:2, None, :], sin[:2, None, :])
-    _close("rope forward", rotated[0, :, :2].transpose(0, 1), want, 1e-5, problems)
+    want = ref_rope(x, cos[:2, None, :], sin[:2, None, :]).to(f16)
+    _close("rope forward", rotated[0, :, :2].transpose(0, 1), want, 2e-3, problems)
+    _close("rope backward finite", base16.grad, base16.grad.nan_to_num(), 0.0, problems)
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     return problems

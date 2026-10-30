@@ -12,7 +12,8 @@
     ├── warmup.py             compile + self-check the kernels while the model loads
     ├── _runtime.py           feature switches (SOUP_KERNELS_*) and capability checks
     ├── swiglu.py             the starter kit's example, as shipped (not used by apply())
-    └── test_kernels.py       kernels vs PyTorch / bitsandbytes, and a tiny-model end-to-end test
+    ├── test_kernels.py       on a GPU: kernels vs PyTorch / bitsandbytes, tiny-model end-to-end test
+    └── test_interpret.py     on a CPU (TRITON_INTERPRET=1): the same @triton.jit code, end to end
 
 The rules in short (the README and the task statement have the full ones):
 - our own `@triton.jit` kernels, defined in this folder, run in every measured run and together

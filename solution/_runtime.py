@@ -8,7 +8,12 @@ reproduced (or bisected on Kaggle) without editing code:
     SOUP_KERNELS_FP16_EMBED=0      keep the fp32 tied embedding / lm_head copy
     SOUP_KERNELS_WARMUP=0          do not pre-compile the kernels while the model loads
     SOUP_KERNELS_CE_CHUNK=256      rows of logits per chunk of the fused lm_head + loss
-    SOUP_KERNELS_MLP_RECOMPUTE=1   recompute gate/up in backward (less memory, slower)
+    SOUP_KERNELS_MLP_RECOMPUTE=0   keep the fp16 gate/up outputs for backward instead of
+                                   recomputing them from fp16 x (default 1: recompute; the
+                                   two [tokens, 8960] tensors are ~35 KB per token per layer,
+                                   ~1.7 GB of activations on the largest batch, against two
+                                   extra GEMMs per layer in backward that reuse the weight the
+                                   input gradient unpacks anyway)
     SOUP_KERNELS_VERBOSE=1         print why a step falls back to the plain path
 
 The kernels target a Tesla T4 (sm_75): fp16 storage, fp32 math, no bf16.
@@ -39,7 +44,7 @@ ENABLED = _flag("SOUP_KERNELS", True)
 UNPAD = _flag("SOUP_KERNELS_UNPAD", True)
 FP16_EMBED = _flag("SOUP_KERNELS_FP16_EMBED", True)
 WARMUP = _flag("SOUP_KERNELS_WARMUP", True)
-MLP_RECOMPUTE = _flag("SOUP_KERNELS_MLP_RECOMPUTE", False)
+MLP_RECOMPUTE = _flag("SOUP_KERNELS_MLP_RECOMPUTE", True)
 CE_CHUNK = max(16, _int("SOUP_KERNELS_CE_CHUNK", 256))
 VERBOSE = _flag("SOUP_KERNELS_VERBOSE", False)
 # Only for the kernel tests on a machine without a GPU: TRITON_INTERPRET=1 runs the

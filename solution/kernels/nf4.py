@@ -169,9 +169,12 @@ class GateUpSwiGLUFunction(torch.autograd.Function):
     """silu(gate(x)) * up(x) for a Qwen2 MLP with 4-bit gate/up: fp32 x in, fp16 out.
 
     Same values as base (gate/up see fp16(x) and return fp16, silu * up in fp32, rounded once to
-    the fp16 that down_proj reads). Saves fp16 gate and up (or, with recompute, only fp16 x and
-    runs the two 4-bit GEMMs again in backward). The two input gradients are added in fp32, as
-    autograd adds the two fp16 -> fp32 cast gradients in base.
+    the fp16 that down_proj reads). With recompute (the default) only fp16 x is saved and the
+    two GEMMs run again in backward on the weights that backward unpacks anyway for the input
+    gradient, so recomputing costs two GEMMs and no extra NF4 unpacking; the same cuBLAS call
+    on the same inputs gives the same gate/up. Without recompute it saves fp16 gate and up. The
+    two input gradients are added in fp32, as autograd adds the two fp16 -> fp32 cast
+    gradients in base.
     """
 
     @staticmethod
@@ -192,15 +195,21 @@ class GateUpSwiGLUFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dp):
+        # Each weight is unpacked once here and serves both the recomputed projection (recompute
+        # mode) and the input gradient.
+        w_gate = dequantize_nf4(ctx.gate)
+        w_up = dequantize_nf4(ctx.up)
         if ctx.recompute:
             (x16,) = ctx.saved_tensors
-            g = _nf4_linear_nograd(ctx.gate, x16)
-            u = _nf4_linear_nograd(ctx.up, x16)
+            g = F.linear(x16, w_gate, _bias16(ctx.gate, x16.dtype))
+            u = F.linear(x16, w_up, _bias16(ctx.up, x16.dtype))
+            del x16
         else:
             g, u = ctx.saved_tensors
         dg, du = swiglu_bwd_inplace(dp.to(torch.float16), g, u)
-        dx = torch.matmul(dg, dequantize_nf4(ctx.gate)).to(torch.float32)
-        dx += torch.matmul(du, dequantize_nf4(ctx.up)).to(torch.float32)
+        dx = torch.matmul(dg, w_gate).to(torch.float32)
+        del dg, w_gate
+        dx += torch.matmul(du, w_up).to(torch.float32)
         return dx.to(ctx.x_dtype), None, None, None
 
 

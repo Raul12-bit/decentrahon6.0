@@ -128,8 +128,10 @@ def test_rope_lora_scatter(rotate, with_lora):
         x = ref_rope(x, cos[dst % seq][:, None], sin[dst % seq][:, None])
     padded = torch.zeros(batch * seq, heads, dim, device="cuda")
     padded = padded.index_copy(0, dst, x).view(batch, seq, heads, dim).permute(0, 2, 1, 3)
+    padded = padded.half()  # base: autocast rounds the fp32 RoPE output to fp16 for SDPA
     padded.backward(gout)
-    torch.testing.assert_close(out, padded, rtol=1e-6, atol=1e-6)
+    assert out.dtype == torch.float16
+    torch.testing.assert_close(out, padded, rtol=1e-3, atol=1e-3)
     torch.testing.assert_close(base.grad.float(), b2.grad.float(), rtol=2e-3, atol=2e-3)
     if with_lora:
         torch.testing.assert_close(lora.grad.float(), l2.grad.float(), rtol=2e-3, atol=2e-3)

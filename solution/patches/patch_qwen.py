@@ -99,7 +99,22 @@ def _embed_fp32(embedding, ids):
     return out.to(torch.float32)
 
 
-def _dropout_like_base(dropout, x32, ctx: _LayerCtx):
+class _PaddedInput:
+    """The attention input on the padded [B * S, H] layout (zeros at the pads), built at most
+    once per layer and shared by the q and v LoRA dropouts."""
+
+    def __init__(self, x32, ctx: _LayerCtx):
+        self.x32, self.ctx, self.padded = x32, ctx, None
+
+    def get(self):
+        if self.padded is None:
+            ctx = self.ctx
+            self.padded = self.x32.new_zeros((ctx.batch * ctx.seq, self.x32.shape[1]))
+            self.padded = self.padded.index_copy(0, ctx.dst, self.x32)
+        return self.padded
+
+
+def _dropout_like_base(dropout, x32, ctx: _LayerCtx, padded: Optional[_PaddedInput] = None):
     """peft's lora_dropout(x) on the rows of the padded batch base would pass it.
 
     Dropout's random mask depends on the number of elements, not on their values, so drawing
@@ -110,9 +125,9 @@ def _dropout_like_base(dropout, x32, ctx: _LayerCtx):
         return x32
     if ctx.full:
         return dropout(x32)
-    padded = x32.new_zeros((ctx.batch * ctx.seq, x32.shape[1]))
-    padded = padded.index_copy(0, ctx.dst, x32)
-    return dropout(padded).index_select(0, ctx.dst)
+    if padded is None:
+        padded = _PaddedInput(x32, ctx)
+    return dropout(padded.get()).index_select(0, ctx.dst)
 
 
 def _linear16(module, x16):
@@ -122,14 +137,19 @@ def _linear16(module, x16):
     return module(x16)
 
 
-def _proj_parts(module, x32, ctx):
-    """(base16, lora16 or None) of q/k/v: the two terms peft adds in fp32 in base."""
+def _proj_parts(module, x32, ctx, padded: Optional[_PaddedInput] = None):
+    """(base16, lora16 or None) of q/k/v: the two terms peft adds in fp32 in base.
+
+    Each projection casts x32 to fp16 on its own (as bitsandbytes does inside each Linear4bit),
+    so autograd adds the q/k/v input gradients in fp32, as in base.
+    """
     base, lora = _lora_parts(module)
     base16 = _linear16(base, x32.to(torch.float16))
     if lora is None:
         return base16, None
     lora_a, lora_b, dropout, scaling = lora
-    out = lora_b(lora_a(_dropout_like_base(dropout, x32, ctx))) * scaling  # fp16 under autocast
+    dropped = _dropout_like_base(dropout, x32, ctx, padded)
+    out = lora_b(lora_a(dropped)) * scaling  # fp16 under autocast
     return base16, out
 
 
@@ -138,10 +158,12 @@ def _attention(attn, x32, ctx: _LayerCtx):
 
     config = attn.config
     n_heads, n_kv, head_dim = config.num_attention_heads, config.num_key_value_heads, attn.head_dim
+    padded = _PaddedInput(x32, ctx)
     # The order of q, k, v (and so of their dropout masks) is base's.
-    q_base, q_lora = _proj_parts(attn.q_proj, x32, ctx)
-    k_base, k_lora = _proj_parts(attn.k_proj, x32, ctx)
-    v_base, v_lora = _proj_parts(attn.v_proj, x32, ctx)
+    q_base, q_lora = _proj_parts(attn.q_proj, x32, ctx, padded)
+    k_base, k_lora = _proj_parts(attn.k_proj, x32, ctx, padded)
+    v_base, v_lora = _proj_parts(attn.v_proj, x32, ctx, padded)
+    del padded
     common = (ctx.cos, ctx.sin, ctx.cos_row, ctx.dst, ctx.batch, ctx.seq)
     q = rope_lora_scatter(q_base, q_lora, *common, n_heads, True, ctx.block_heads)
     k = rope_lora_scatter(k_base, k_lora, *common, n_kv, True, ctx.block_heads)

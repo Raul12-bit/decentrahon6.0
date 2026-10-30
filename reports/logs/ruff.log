@@ -1,0 +1,1029 @@
+F401 [*] `subprocess` imported but unused
+  --> benchmarks\verify_t4_speedup.py:26:8
+   |
+24 | import json
+25 | import os
+26 | import subprocess
+   |        ^^^^^^^^^^
+27 | import sys
+28 | import tempfile
+   |
+help: Remove unused import: `subprocess`
+   |
+25 | import os
+   - import subprocess
+26 | import sys
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> benchmarks\verify_t4_speedup.py:110:5
+    |
+109 | def _run_side(side: str, args, out: Path) -> dict:
+110 |     from common import OFFLINE_ENV, run_logged  # the harness's env and nvidia-smi poller
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+111 |
+112 |     run_dir = out / side
+    |
+help: Organize imports
+    |
+109 | def _run_side(side: str, args, out: Path) -> dict:
+    -     from common import OFFLINE_ENV, run_logged  # the harness's env and nvidia-smi poller
+110 +     from common import (  # the harness's env and nvidia-smi poller
+111 +         OFFLINE_ENV,
+112 +         run_logged,
+113 +     )
+114 |
+    |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+  --> harness\_train.py:25:74
+   |
+23 | REPO = Path(__file__).resolve().parents[1]
+24 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+25 | from common import ALLOC_CONF, RUNTIME_BANNED, SOLUTION_DIR, write_json  # noqa: E402
+   |                                                                          ^^^^^^^^^^^^
+26 |
+27 | TIMED_FROM_STEP = 2  # 0-based; the first steps compile and autotune
+   |
+help: Remove unused `noqa` directive
+   |
+24 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from common import ALLOC_CONF, RUNTIME_BANNED, SOLUTION_DIR, write_json  # noqa: E402
+25 + from common import ALLOC_CONF, RUNTIME_BANNED, SOLUTION_DIR, write_json
+26 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> harness\check_rules.py:24:1
+   |
+23 |   sys.path.insert(0, str(Path(__file__).resolve().parent))
+24 | / from common import (ALLOC_CONF, BANNED_MODULES, ENV, EXAMPLE_PREFIX,  # noqa: E402
+25 | |                     INDUCTOR_PREFIXES, REPO, SOLUTION_DIR, write_json)
+   | |______________________________________________________________________^
+26 |
+27 |   MIN_KERNEL_SHARE = 0.05      # your kernels together: at least 5% of the training time
+   |
+help: Organize imports
+   |
+23 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from common import (ALLOC_CONF, BANNED_MODULES, ENV, EXAMPLE_PREFIX,  # noqa: E402
+   -                     INDUCTOR_PREFIXES, REPO, SOLUTION_DIR, write_json)
+24 + from common import (  # noqa: E402
+25 +     ALLOC_CONF,
+26 +     BANNED_MODULES,
+27 +     ENV,
+28 +     EXAMPLE_PREFIX,
+29 +     INDUCTOR_PREFIXES,
+30 +     REPO,
+31 +     SOLUTION_DIR,
+32 +     write_json,
+33 + )
+34 |
+   |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+  --> harness\check_rules.py:24:71
+   |
+23 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+24 | from common import (ALLOC_CONF, BANNED_MODULES, ENV, EXAMPLE_PREFIX,  # noqa: E402
+   |                                                                       ^^^^^^^^^^^^
+25 |                     INDUCTOR_PREFIXES, REPO, SOLUTION_DIR, write_json)
+   |
+help: Remove unused `noqa` directive
+   |
+23 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from common import (ALLOC_CONF, BANNED_MODULES, ENV, EXAMPLE_PREFIX,  # noqa: E402
+24 + from common import (ALLOC_CONF, BANNED_MODULES, ENV, EXAMPLE_PREFIX,
+25 |                     INDUCTOR_PREFIXES, REPO, SOLUTION_DIR, write_json)
+   |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+  --> harness\eval_adapter.py:16:27
+   |
+15 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+16 | from common import MODEL  # noqa: E402
+   |                           ^^^^^^^^^^^^
+17 |
+18 | MAX_LENGTH = 512
+   |
+help: Remove unused `noqa` directive
+   |
+15 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from common import MODEL  # noqa: E402
+16 + from common import MODEL
+17 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> harness\run_task.py:25:1
+   |
+24 |   sys.path.insert(0, str(Path(__file__).resolve().parent))
+25 | / from common import (MODEL, OFFLINE_ENV, REPO, installed_packages, library_versions,  # noqa: E402
+26 | |                     read_json, run_logged, write_json)
+   | |______________________________________________________^
+27 |
+28 |   LOG_KEYS = ("loss", "num_tokens", "entropy", "mean_token_accuracy", "grad_norm")
+   |
+help: Organize imports
+   |
+24 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from common import (MODEL, OFFLINE_ENV, REPO, installed_packages, library_versions,  # noqa: E402
+   -                     read_json, run_logged, write_json)
+25 + from common import (  # noqa: E402
+26 +     MODEL,
+27 +     OFFLINE_ENV,
+28 +     REPO,
+29 +     installed_packages,
+30 +     library_versions,
+31 +     read_json,
+32 +     run_logged,
+33 +     write_json,
+34 + )
+35 |
+   |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+  --> harness\run_task.py:25:86
+   |
+24 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+25 | from common import (MODEL, OFFLINE_ENV, REPO, installed_packages, library_versions,  # noqa: E402
+   |                                                                                      ^^^^^^^^^^^^
+26 |                     read_json, run_logged, write_json)
+   |
+help: Remove unused `noqa` directive
+   |
+24 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from common import (MODEL, OFFLINE_ENV, REPO, installed_packages, library_versions,  # noqa: E402
+25 + from common import (MODEL, OFFLINE_ENV, REPO, installed_packages, library_versions,
+26 |                     read_json, run_logged, write_json)
+   |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+  --> harness\score.py:21:38
+   |
+20 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+21 | from check_rules import CHECK_COUNT  # noqa: E402
+   |                                      ^^^^^^^^^^^^
+22 | from common import file_sha256, read_json  # noqa: E402
+   |
+help: Remove unused `noqa` directive
+   |
+20 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+   - from check_rules import CHECK_COUNT  # noqa: E402
+21 + from check_rules import CHECK_COUNT
+22 | from common import file_sha256, read_json  # noqa: E402
+   |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E402`)
+  --> harness\score.py:22:44
+   |
+20 | sys.path.insert(0, str(Path(__file__).resolve().parent))
+21 | from check_rules import CHECK_COUNT  # noqa: E402
+22 | from common import file_sha256, read_json  # noqa: E402
+   |                                            ^^^^^^^^^^^^
+23 |
+24 | TIE = 0.05
+   |
+help: Remove unused `noqa` directive
+   |
+21 | from check_rules import CHECK_COUNT  # noqa: E402
+   - from common import file_sha256, read_json  # noqa: E402
+22 + from common import file_sha256, read_json
+23 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> reports\inspect_project.py:2:1
+   |
+ 1 |   """Dependency-free inventory and static checks, with machine-readable evidence."""
+ 2 | / import ast
+ 3 | | import hashlib
+ 4 | | import json
+ 5 | | from pathlib import Path
+ 6 | | import platform
+ 7 | | import subprocess
+ 8 | | import sys
+   | |__________^
+ 9 |
+10 |   root = Path(__file__).resolve().parents[1]
+   |
+help: Organize imports
+  |
+4 | import json
+  - from pathlib import Path
+5 | import platform
+6 | import subprocess
+7 | import sys
+8 + from pathlib import Path
+9 |
+  |
+
+F401 [*] `ast` imported but unused
+ --> reports\inspect_project.py:2:8
+  |
+1 | """Dependency-free inventory and static checks, with machine-readable evidence."""
+2 | import ast
+  |        ^^^
+3 | import hashlib
+4 | import json
+  |
+help: Remove unused import: `ast`
+  |
+1 | """Dependency-free inventory and static checks, with machine-readable evidence."""
+  - import ast
+2 | import hashlib
+  |
+
+BLE001 Do not catch blind exception: `Exception`
+  --> reports\inspect_project.py:19:12
+   |
+17 |     try:
+18 |         compile(file.read_text(encoding="utf-8"), str(file), "exec")
+19 |     except Exception as exc:
+   |            ^^^^^^^^^
+20 |         issues.append(f"{file.relative_to(root)}: {exc}")
+21 | own, copies, lookalikes, banned, broken = source_kernels(root / "solution")
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> reports\run_check.py:2:1
+  |
+1 |   """Run one bounded audit command and preserve its real output and exit code."""
+2 | / import json
+3 | | import os
+4 | | from pathlib import Path
+5 | | import subprocess
+6 | | import sys
+7 | | import time
+  | |___________^
+8 |
+9 |   ROOT = Path(__file__).resolve().parents[1]
+  |
+help: Organize imports
+  |
+3 | import os
+  - from pathlib import Path
+4 | import subprocess
+5 | import sys
+6 | import time
+7 + from pathlib import Path
+8 |
+  |
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports\run_check.py:18:14
+   |
+16 |            PYTHONPATH=str(ROOT))
+17 | try:
+18 |     result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True,
+   |              ^^^^^^^^^^^^^^
+19 |                             text=True, encoding="utf-8", errors="replace", timeout=900)
+20 |     code, output = result.returncode, result.stdout + result.stderr
+   |
+help: Add explicit `check=False`
+   |
+17 | try:
+   -     result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True,
+18 +     result = subprocess.run(command, check=False, cwd=ROOT, env=env, capture_output=True,
+19 |                             text=True, encoding="utf-8", errors="replace", timeout=900)
+   |
+note: This suggestion may be incorrect or produce invalid syntax. It requires manual review and cannot be applied automatically
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> reports\smoke_train.py:5:1
+   |
+ 3 |   CPU/fp32 fallback only. No downloaded model, synthetic performance claims or CUDA claims.
+ 4 |   """
+ 5 | / import json
+ 6 | | import math
+ 7 | | import os
+ 8 | | from pathlib import Path
+ 9 | | import subprocess
+10 | | import sys
+11 | | import time
+12 | |
+13 | | import torch
+14 | | import yaml
+15 | | from safetensors.torch import load_file
+16 | | from tokenizers import Tokenizer
+17 | | from tokenizers.models import WordLevel
+18 | | from tokenizers.pre_tokenizers import Whitespace
+19 | | from transformers import PreTrainedTokenizerFast, Qwen2Config, Qwen2ForCausalLM
+   | |_______________________________________________________________________________^
+20 |
+21 |   ROOT = Path(__file__).resolve().parents[1]
+   |
+help: Organize imports
+   |
+7  | import os
+   - from pathlib import Path
+8  | import subprocess
+9  | import sys
+10 | import time
+11 + from pathlib import Path
+12 |
+   |
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports\smoke_train.py:66:9
+   |
+64 | def run(name, extra=(), expected=0):
+65 |     t = time.perf_counter()
+66 |     p = subprocess.run(command + list(extra), cwd=ROOT, env=env, capture_output=True,
+   |         ^^^^^^^^^^^^^^
+67 |                        text=True, encoding="utf-8", errors="replace", timeout=240)
+68 |     (ROOT / "reports" / "logs" / f"{name}.log").write_text(p.stdout + p.stderr, encoding="utf-8")
+   |
+help: Add explicit `check=False`
+   |
+65 |     t = time.perf_counter()
+   -     p = subprocess.run(command + list(extra), cwd=ROOT, env=env, capture_output=True,
+66 +     p = subprocess.run(command + list(extra), check=False, cwd=ROOT, env=env, capture_output=True,
+67 |                        text=True, encoding="utf-8", errors="replace", timeout=240)
+   |
+note: This suggestion may be incorrect or produce invalid syntax. It requires manual review and cannot be applied automatically
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> reports\test_cpu_validation.py:2:1
+  |
+1 |   """Small reproducible CPU checks; these do not validate Triton/CUDA execution."""
+2 | / from types import SimpleNamespace
+3 | |
+4 | | import pytest
+5 | | import torch
+6 | |
+7 | | from solution.triton_cross_entropy import fused_linear_cross_entropy, reference_linear_cross_entropy
+8 | | from solution.triton_ops import add_rmsnorm, ref_add_rmsnorm, ref_rope, rope_lora_scatter, swiglu
+  | |_________________________________________________________________________________________________^
+help: Organize imports
+   |
+6  |
+   - from solution.triton_cross_entropy import fused_linear_cross_entropy, reference_linear_cross_entropy
+   - from solution.triton_ops import add_rmsnorm, ref_add_rmsnorm, ref_rope, rope_lora_scatter, swiglu
+7  + from solution.triton_cross_entropy import (
+8  +     fused_linear_cross_entropy,
+9  +     reference_linear_cross_entropy,
+10 + )
+11 + from solution.triton_ops import (
+12 +     add_rmsnorm,
+13 +     ref_add_rmsnorm,
+14 +     ref_rope,
+15 +     rope_lora_scatter,
+16 +     swiglu,
+17 + )
+18 |
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports\test_cpu_validation.py:113:13
+    |
+111 | def test_benchmark_rejects_unequal_curves():
+112 |     from benchmarks.verify_t4_speedup import _compare_curves
+113 |     entry = dict(loss=1., entropy=2., mean_token_accuracy=.5, num_tokens=10)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+114 |     assert _compare_curves({"logs": [entry, entry]}, {"logs": [entry]})
+    |
+help: Rewrite as a literal
+    |
+112 |     from benchmarks.verify_t4_speedup import _compare_curves
+    -     entry = dict(loss=1., entropy=2., mean_token_accuracy=.5, num_tokens=10)
+113 +     entry = {"loss": 1., "entropy": 2., "mean_token_accuracy": .5, "num_tokens": 10}
+114 |     assert _compare_curves({"logs": [entry, entry]}, {"logs": [entry]})
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> reports\test_cpu_validation.py:156:5
+    |
+154 |   @pytest.mark.parametrize("disabled", [True, False])
+155 |   def test_manual_prepare_does_not_mutate_unsupported_model(monkeypatch, disabled):
+156 | /     from transformers import Qwen2Config, Qwen2ForCausalLM
+157 | |     from solution import _runtime, patch_model as pm
+    | |____________________________________________________^
+158 |       config = Qwen2Config(vocab_size=16, hidden_size=16, intermediate_size=32,
+159 |                            num_hidden_layers=1, num_attention_heads=2,
+    |
+help: Organize imports
+    |
+156 |     from transformers import Qwen2Config, Qwen2ForCausalLM
+    -     from solution import _runtime, patch_model as pm
+157 +
+158 +     from solution import _runtime
+159 +     from solution import patch_model as pm
+160 |     config = Qwen2Config(vocab_size=16, hidden_size=16, intermediate_size=32,
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> reports\test_cpu_validation.py:173:5
+    |
+172 | def test_block_document_mask_prevents_cross_document_influence():
+173 |     from soup_cli.utils.cross_doc_attn import build_cross_doc_mask, compute_doc_boundaries
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+174 |     boundaries = compute_doc_boundaries([3, 2])
+175 |     mask = torch.from_numpy(build_cross_doc_mask(boundaries, 5)).bool()
+    |
+help: Organize imports
+    |
+172 | def test_block_document_mask_prevents_cross_document_influence():
+    -     from soup_cli.utils.cross_doc_attn import build_cross_doc_mask, compute_doc_boundaries
+173 +     from soup_cli.utils.cross_doc_attn import (
+174 +         build_cross_doc_mask,
+175 +         compute_doc_boundaries,
+176 +     )
+177 |     boundaries = compute_doc_boundaries([3, 2])
+    |
+
+UP033 [*] Use `@functools.cache` instead of `@functools.lru_cache(maxsize=None)`
+  --> solution\_runtime.py:59:11
+   |
+59 | @lru_cache(maxsize=None)
+   |           ^^^^^^^^^^^^^^
+60 | def triton_available() -> bool:
+61 |     try:
+   |
+help: Rewrite with `@functools.cache
+   |
+20 | import sys
+   - from functools import lru_cache
+21 + from functools import lru_cache, cache
+22 |
+--------------------------------------------------------------------------------
+58 |
+   - @lru_cache(maxsize=None)
+59 + @cache
+60 | def triton_available() -> bool:
+   |
+
+RUF100 [*] Unused `noqa` directive (unused: `F401`)
+  --> solution\_runtime.py:62:24
+   |
+60 | def triton_available() -> bool:
+61 |     try:
+62 |         import triton  # noqa: F401
+   |                        ^^^^^^^^^^^^
+63 |         import triton.language  # noqa: F401
+64 |     except Exception:  # noqa: BLE001 - any import problem means "no Triton"
+   |
+help: Remove unused `noqa` directive
+   |
+61 |     try:
+   -         import triton  # noqa: F401
+62 +         import triton
+63 |         import triton.language  # noqa: F401
+   |
+
+UP033 [*] Use `@functools.cache` instead of `@functools.lru_cache(maxsize=None)`
+  --> solution\_runtime.py:69:11
+   |
+69 | @lru_cache(maxsize=None)
+   |           ^^^^^^^^^^^^^^
+70 | def cuda_kernels_supported() -> bool:
+71 |     """Triton on a CUDA GPU of compute capability 7.5 (T4) or newer."""
+   |
+help: Rewrite with `@functools.cache
+   |
+20 | import sys
+   - from functools import lru_cache
+21 + from functools import lru_cache, cache
+22 |
+--------------------------------------------------------------------------------
+68 |
+   - @lru_cache(maxsize=None)
+69 + @cache
+70 | def cuda_kernels_supported() -> bool:
+   |
+
+UP045 [*] Use `X | None` for type annotations
+  --> solution\patch_model.py:45:11
+   |
+43 | STEP_ATTR = "_soup_chunked_step"  # soup_cli.utils.stream_loss_chunk.STEP_ATTR
+44 | _ORIGINALS: dict[str, Any] = {}
+45 | _REQUEST: Optional["_StepRequest"] = None
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^
+help: Convert to `X | None`
+   |
+44 | _ORIGINALS: dict[str, Any] = {}
+   - _REQUEST: Optional["_StepRequest"] = None
+45 + _REQUEST: "_StepRequest" | None = None
+46 |
+   |
+
+UP037 [*] Remove quotes from type annotation
+  --> solution\patch_model.py:45:20
+   |
+43 | STEP_ATTR = "_soup_chunked_step"  # soup_cli.utils.stream_loss_chunk.STEP_ATTR
+44 | _ORIGINALS: dict[str, Any] = {}
+45 | _REQUEST: Optional["_StepRequest"] = None
+   |                    ^^^^^^^^^^^^^^
+help: Remove quotes
+   |
+44 | _ORIGINALS: dict[str, Any] = {}
+   - _REQUEST: Optional["_StepRequest"] = None
+45 + _REQUEST: Optional[_StepRequest] = None
+46 |
+   |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `N806`)
+  --> solution\patch_model.py:75:25
+   |
+73 |         from peft.tuners.lora import LoraLayer
+74 |     except Exception:  # noqa: BLE001
+75 |         LoraLayer = ()  # noqa: N806
+   |                         ^^^^^^^^^^^^
+76 |     if not LoraLayer or not isinstance(module, LoraLayer):
+77 |         return module, None
+   |
+help: Remove unused `noqa` directive
+   |
+74 |     except Exception:  # noqa: BLE001
+   -         LoraLayer = ()  # noqa: N806
+75 +         LoraLayer = ()
+76 |     if not LoraLayer or not isinstance(module, LoraLayer):
+   |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\patch_model.py:171:26
+    |
+171 | def _model_reason(lm) -> Optional[str]:
+    |                          ^^^^^^^^^^^^^
+172 |     """None if the fast path covers this model, else why not. Cached on the model."""
+173 |     cached = getattr(lm, "_soup_fast_reason", False)
+    |
+help: Convert to `X | None`
+    |
+170 |
+    - def _model_reason(lm) -> Optional[str]:
+171 + def _model_reason(lm) -> str | None:
+172 |     """None if the fast path covers this model, else why not. Cached on the model."""
+    |
+
+S110 `try`-`except`-`pass` detected, consider logging the exception
+   --> solution\patch_model.py:179:5
+    |
+177 |       try:
+178 |           object.__setattr__(lm, "_soup_fast_reason", reason)
+179 | /     except Exception:  # noqa: BLE001
+180 | |         pass
+    | |____________^
+181 |       if reason is not None:
+182 |           _runtime.log(f"fast path off for this model: {reason}")
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\patch_model.py:186:34
+    |
+186 | def _compute_model_reason(lm) -> Optional[str]:
+    |                                  ^^^^^^^^^^^^^
+187 |     config = lm.config
+188 |     model = lm.model
+    |
+help: Convert to `X | None`
+    |
+185 |
+    - def _compute_model_reason(lm) -> Optional[str]:
+186 + def _compute_model_reason(lm) -> str | None:
+187 |     config = lm.config
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\patch_model.py:222:59
+    |
+221 | def _step_reason(lm, input_ids, inputs_embeds, labels, past_key_values, use_cache,
+222 |                  logits_to_keep, position_ids, kwargs) -> Optional[str]:
+    |                                                           ^^^^^^^^^^^^^
+223 |     if not lm.training:
+224 |         return "not training"
+    |
+help: Convert to `X | None`
+    |
+221 | def _step_reason(lm, input_ids, inputs_embeds, labels, past_key_values, use_cache,
+    -                  logits_to_keep, position_ids, kwargs) -> Optional[str]:
+222 +                  logits_to_keep, position_ids, kwargs) -> str | None:
+223 |     if not lm.training:
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\patch_model.py:352:48
+    |
+352 | def _trainer_reason(trainer, model, inputs) -> Optional[str]:
+    |                                                ^^^^^^^^^^^^^
+353 |     from transformers.models.qwen2 import modeling_qwen2 as mq
+    |
+help: Convert to `X | None`
+    |
+351 |
+    - def _trainer_reason(trainer, model, inputs) -> Optional[str]:
+352 + def _trainer_reason(trainer, model, inputs) -> str | None:
+353 |     from transformers.models.qwen2 import modeling_qwen2 as mq
+    |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `A002`)
+   --> solution\patch_model.py:465:32
+    |
+463 |     """An embedding stored in fp16 whose rows come out in fp32, as the fp32 table gave them."""
+464 |
+465 |     def forward(self, input):  # noqa: A002 - nn.Embedding's signature
+    |                                ^^^^^^^^^^^^
+466 |         return super().forward(input).to(torch.float32)
+    |
+help: Remove unused `noqa` directive
+    |
+464 |
+    -     def forward(self, input):  # noqa: A002 - nn.Embedding's signature
+465 +     def forward(self, input):
+466 |         return super().forward(input).to(torch.float32)
+    |
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `A002`)
+   --> solution\patch_model.py:473:32
+    |
+471 |     same in training)."""
+472 |
+473 |     def forward(self, input):  # noqa: A002
+    |                                ^^^^^^^^^^^^
+474 |         return F.linear(input.to(self.weight.dtype), self.weight, self.bias)
+    |
+help: Remove unused `noqa` directive
+    |
+472 |
+    -     def forward(self, input):  # noqa: A002
+473 +     def forward(self, input):
+474 |         return F.linear(input.to(self.weight.dtype), self.weight, self.bias)
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> solution\test_kernels.py:45:5
+   |
+43 |   @pytest.mark.parametrize("rows,vocab,chunk", [(300, 151936, 128), (37, 5003, 16)])
+44 |   def test_fused_linear_cross_entropy(rows, vocab, chunk):
+45 | /     from solution.triton_cross_entropy import (fused_linear_cross_entropy,
+46 | |                                                reference_linear_cross_entropy)
+   | |______________________________________________________________________________^
+47 |
+48 |       torch.manual_seed(0)
+   |
+help: Organize imports
+   |
+44 | def test_fused_linear_cross_entropy(rows, vocab, chunk):
+   -     from solution.triton_cross_entropy import (fused_linear_cross_entropy,
+   -                                                reference_linear_cross_entropy)
+45 +     from solution.triton_cross_entropy import (
+46 +         fused_linear_cross_entropy,
+47 +         reference_linear_cross_entropy,
+48 +     )
+49 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> solution\test_kernels.py:176:5
+    |
+174 | def test_nf4_dequant_is_bitsandbytes_bit_for_bit(shape):
+175 |     pytest.importorskip("bitsandbytes")
+176 |     from solution.triton_nf4_lora import dequantize_nf4, nf4_eligible, reference_dequantize
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+177 |
+178 |     layer = _linear4bit(*shape)
+    |
+help: Organize imports
+    |
+175 |     pytest.importorskip("bitsandbytes")
+    -     from solution.triton_nf4_lora import dequantize_nf4, nf4_eligible, reference_dequantize
+176 +     from solution.triton_nf4_lora import (
+177 +         dequantize_nf4,
+178 +         nf4_eligible,
+179 +         reference_dequantize,
+180 +     )
+181 |
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\triton_cross_entropy.py:258:16
+    |
+256 |     weight16: torch.Tensor,
+257 |     targets: torch.Tensor,
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+260 |     chunk: Optional[int] = None,
+    |
+help: Convert to `X | None`
+    |
+257 |     targets: torch.Tensor,
+    -     num_items: Optional[Union[torch.Tensor, int]] = None,
+258 +     num_items: Union[torch.Tensor, int] | None = None,
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+    |
+
+UP007 [*] Use `X | Y` for type annotations
+   --> solution\triton_cross_entropy.py:258:25
+    |
+256 |     weight16: torch.Tensor,
+257 |     targets: torch.Tensor,
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+260 |     chunk: Optional[int] = None,
+    |
+help: Convert to `X | Y`
+    |
+257 |     targets: torch.Tensor,
+    -     num_items: Optional[Union[torch.Tensor, int]] = None,
+258 +     num_items: Optional[torch.Tensor | int] = None,
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\triton_cross_entropy.py:259:17
+    |
+257 |     targets: torch.Tensor,
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+260 |     chunk: Optional[int] = None,
+261 | ) -> tuple[torch.Tensor, CEStats]:
+    |
+help: Convert to `X | None`
+    |
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+    -     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+259 +     grad_scale: Union[torch.Tensor, float] | None = None,
+260 |     chunk: Optional[int] = None,
+    |
+
+UP007 [*] Use `X | Y` for type annotations
+   --> solution\triton_cross_entropy.py:259:26
+    |
+257 |     targets: torch.Tensor,
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+260 |     chunk: Optional[int] = None,
+261 | ) -> tuple[torch.Tensor, CEStats]:
+    |
+help: Convert to `X | Y`
+    |
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+    -     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+259 +     grad_scale: Optional[torch.Tensor | float] = None,
+260 |     chunk: Optional[int] = None,
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\triton_cross_entropy.py:260:12
+    |
+258 |     num_items: Optional[Union[torch.Tensor, int]] = None,
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+260 |     chunk: Optional[int] = None,
+    |            ^^^^^^^^^^^^^
+261 | ) -> tuple[torch.Tensor, CEStats]:
+262 |     """Mean (or sum / num_items) next-token cross-entropy of `hidden @ weight16^T`.
+    |
+help: Convert to `X | None`
+    |
+259 |     grad_scale: Optional[Union[torch.Tensor, float]] = None,
+    -     chunk: Optional[int] = None,
+260 +     chunk: int | None = None,
+261 | ) -> tuple[torch.Tensor, CEStats]:
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\triton_ops.py:241:43
+    |
+241 | def _norm_fwd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^
+242 |               eps: float):
+243 |     n_rows, n_cols = resid.shape
+    |
+help: Convert to `X | None`
+    |
+240 |
+    - def _norm_fwd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
+241 + def _norm_fwd(resid: torch.Tensor, delta: torch.Tensor | None, weight: torch.Tensor,
+242 |               eps: float):
+    |
+
+UP045 [*] Use `X | None` for type annotations
+   --> solution\triton_ops.py:322:45
+    |
+322 | def add_rmsnorm(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^
+323 |                 eps: float):
+324 |     """Returns (new residual, normalized). With delta None the residual is returned as is."""
+    |
+help: Convert to `X | None`
+    |
+321 |
+    - def add_rmsnorm(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
+322 + def add_rmsnorm(resid: torch.Tensor, delta: torch.Tensor | None, weight: torch.Tensor,
+323 |                 eps: float):
+    |
+
+UP045 [*] Use `X | None` for type annotations
+  --> solution\warmup.py:28:35
+   |
+28 | def start_background_warmup(base: Optional[str]) -> None:
+   |                                   ^^^^^^^^^^^^^
+29 |     if _STATE["thread"] is not None or not base or not _runtime.cuda_kernels_supported():
+30 |         return
+   |
+help: Convert to `X | None`
+   |
+27 |
+   - def start_background_warmup(base: Optional[str]) -> None:
+28 + def start_background_warmup(base: str | None) -> None:
+29 |     if _STATE["thread"] is not None or not base or not _runtime.cuda_kernels_supported():
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> solution\warmup.py:75:5
+   |
+74 |   def compile_kernels(config, device) -> list[str]:
+75 | /     from .triton_cross_entropy import _launch_ce_kernel
+76 | |     from .triton_nf4_lora import BLOCK_BYTES, DEQUANT_WARPS, _nf4_dequant_nested_kernel
+77 | |     from .triton_ops import (_next_pow2, _norm_bwd, _norm_fwd, ref_add_rmsnorm, ref_rope,
+78 | |                              rope_lora_scatter, swiglu_bwd_inplace, swiglu_fwd)
+   | |_______________________________________________________________________________^
+79 |
+80 |       hidden = int(config.hidden_size)
+   |
+help: Organize imports
+   |
+76 |     from .triton_nf4_lora import BLOCK_BYTES, DEQUANT_WARPS, _nf4_dequant_nested_kernel
+   -     from .triton_ops import (_next_pow2, _norm_bwd, _norm_fwd, ref_add_rmsnorm, ref_rope,
+   -                              rope_lora_scatter, swiglu_bwd_inplace, swiglu_fwd)
+77 +     from .triton_ops import (
+78 +         _next_pow2,
+79 +         _norm_bwd,
+80 +         _norm_fwd,
+81 +         ref_add_rmsnorm,
+82 +         ref_rope,
+83 +         rope_lora_scatter,
+84 +         swiglu_bwd_inplace,
+85 +         swiglu_fwd,
+86 +     )
+87 |
+   |
+
+PIE808 [*] Unnecessary `start` argument in `range`
+  --> task\prepare_data.py:16:20
+   |
+14 | DATASET = "AmanMussa/kazakh-instruction-v2"
+15 | REVISION = "c641407ee50723c84a43ea2ec867b464d3893c12"
+16 | TRAIN_ROWS = range(0, 256)
+   |                    ^
+17 | EVAL_ROWS = range(40000, 40256)
+   |
+help: Remove `start` argument
+   |
+15 | REVISION = "c641407ee50723c84a43ea2ec867b464d3893c12"
+   - TRAIN_ROWS = range(0, 256)
+16 + TRAIN_ROWS = range(256)
+17 | EVAL_ROWS = range(40000, 40256)
+   |
+
+FURB122 [*] Use of `handle.write` in a for loop
+  --> task\prepare_data.py:22:9
+   |
+20 |   def write_jsonl(path, rows):
+21 |       with open(path, "w", encoding="utf-8") as handle:
+22 | /         for row in rows:
+23 | |             handle.write(json.dumps({"instruction": row["instruction"], "input": row["input"],
+24 | |                                      "output": row["output"]}, ensure_ascii=False) + "\n")
+   | |__________________________________________________________________________________________^
+help: Replace with `handle.writelines`
+   |
+21 |     with open(path, "w", encoding="utf-8") as handle:
+   -         for row in rows:
+   -             handle.write(json.dumps({"instruction": row["instruction"], "input": row["input"],
+   -                                      "output": row["output"]}, ensure_ascii=False) + "\n")
+22 +         handle.writelines(json.dumps({"instruction": row["instruction"], "input": row["input"],
+23 +                                      "output": row["output"]}, ensure_ascii=False) + "\n" for row in rows)
+24 |
+   |
+
+FURB122 [*] Use of `f.write` in a for loop
+  --> tests\conftest.py:58:9
+   |
+56 |       ]
+57 |       with open(path, "w", encoding="utf-8") as f:
+58 | /         for s in samples:
+59 | |             f.write(json.dumps(s) + "\n")
+   | |_________________________________________^
+60 |       return path
+   |
+help: Replace with `f.writelines`
+   |
+57 |     with open(path, "w", encoding="utf-8") as f:
+   -         for s in samples:
+   -             f.write(json.dumps(s) + "\n")
+58 +         f.writelines(json.dumps(s) + "\n" for s in samples)
+59 |     return path
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests\test_config.py:5:1
+   |
+ 3 |   """Tests for config loading and validation."""
+ 4 |
+ 5 | / from pathlib import Path
+ 6 | |
+ 7 | | import pytest
+ 8 | |
+ 9 | | from soup_cli.config.loader import load_config
+10 | | from soup_cli.config.schema import SoupConfig
+   | |_____________________________________________^
+help: Organize imports
+  |
+7 | import pytest
+  -
+8 | from soup_cli.config.loader import load_config
+  |
+
+B017 Do not assert blind exception: `Exception`
+  --> tests\test_config.py:41:10
+   |
+39 | def test_config_invalid_task():
+40 |     """Invalid task should raise validation error."""
+41 |     with pytest.raises(Exception):
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^
+42 |         SoupConfig(
+43 |             base="some-model",
+   |
+
+B017 Do not assert blind exception: `Exception`
+  --> tests\test_config.py:51:10
+   |
+49 | def test_config_val_split_bounds():
+50 |     """val_split must be between 0 and 0.5."""
+51 |     with pytest.raises(Exception):
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^
+52 |         SoupConfig(
+53 |             base="some-model",
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests\test_formats.py:5:1
+   |
+ 3 |   """Tests for data/formats.py — reverse conversion + edge cases."""
+ 4 |
+ 5 | / import pytest
+ 6 | |
+ 7 | | from soup_cli.data.formats import (
+ 8 | |     detect_format,
+ 9 | |     format_to_messages,
+10 | |     messages_to_format,
+11 | | )
+   | |_^
+12 |
+13 |   # --- detect_format edge cases ---
+   |
+help: Organize imports
+  |
+5 | import pytest
+  -
+6 | from soup_cli.data.formats import (
+  |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests\test_loader.py:5:1
+   |
+ 3 |   """Tests for data loading (loader.py)."""
+ 4 |
+ 5 | / import json
+ 6 | | from pathlib import Path
+ 7 | |
+ 8 | | import pytest
+ 9 | |
+10 | | from soup_cli.data.loader import load_raw_data
+   | |______________________________________________^
+help: Organize imports
+  |
+8 | import pytest
+  -
+9 | from soup_cli.data.loader import load_raw_data
+  |
+
+UP012 [*] Unnecessary call to `encode` as UTF-8
+  --> tests\test_loader.py:73:40
+   |
+72 |       path = tmp_path / "excel.csv"
+73 |       path.write_bytes(b"\xef\xbb\xbf" + (
+   |  ________________________________________^
+74 | |         'instruction,input,output\r\n"Question, with comma",context,Answer\r\n'
+75 | |     ).encode("utf-8"))
+   | |_____________________^
+76 |       rows = load_raw_data(path)
+77 |       assert detect_format(rows) == "alpaca"
+   |
+help: Rewrite as bytes literal
+   |
+73 |     path.write_bytes(b"\xef\xbb\xbf" + (
+   -         'instruction,input,output\r\n"Question, with comma",context,Answer\r\n'
+   -     ).encode("utf-8"))
+74 +         b'instruction,input,output\r\n"Question, with comma",context,Answer\r\n'
+75 +     ))
+76 |     rows = load_raw_data(path)
+   |
+
+Found 54 errors.
+[*] 47 fixable with `--fix` (1 unsafe fix available with `--fix --unsafe-fixes`).

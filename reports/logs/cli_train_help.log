@@ -1,0 +1,224 @@
+                                                                               
+ Usage: soup train [OPTIONS]                                                   
+                                                                               
+ Start training from a soup.yaml config.                                       
+                                                                               
+┌─ Options ───────────────────────────────────────────────────────────────────┐
+│ --config                     -c      <str>    Path to soup.yaml config file │
+│                                               [default: soup.yaml]          │
+│ --name                       -n      <str>    Experiment name               │
+│                                               (auto-generated if not set)   │
+│ --dry-run                                     Validate config and data      │
+│                                               without training              │
+│ --resume                     -r      <str>    Resume from checkpoint: path  │
+│                                               to checkpoint dir ('auto' for │
+│                                               latest); on the MLX backend,  │
+│                                               a path to a .safetensors      │
+│                                               adapter file instead. Not     │
+│                                               supported when                │
+│                                               training.relora_steps is      │
+│                                               configured                    │
+│ --wandb                                       Enable Weights & Biases       │
+│                                               logging                       │
+│ --tensorboard                                 Enable TensorBoard logging    │
+│                                               (logs to output_dir/runs/)    │
+│ --tracker                            <str>    Experiment tracker: mlflow /  │
+│                                               swanlab / trackio (v0.43.0).  │
+│                                               Mutually exclusive with       │
+│                                               --wandb / --tensorboard.      │
+│ --deepspeed                          <str>    Enable DeepSpeed: zero2,      │
+│                                               zero3, zero2_offload,         │
+│                                               zero3_offload (stage 3 + CPU  │
+│                                               parameter offload), zero++    │
+│                                               (ZeRO++), or path to config   │
+│                                               JSON                          │
+│ --fsdp                               <str>    Enable FSDP2: full_shard,     │
+│                                               shard_grad, or full_offload   │
+│ --gpus                               <str>    GPUs per node for distributed │
+│                                               training ('auto' or integer)  │
+│ --nodes                              <int>    Number of machines; each must │
+│                                               use the same --gpus count     │
+│                                               [default: 1]                  │
+│ --node-rank                          <int>    This machine's rank, from 0   │
+│                                               to nodes minus 1 (default 0)  │
+│ --master-addr                        <str>    Rank 0 hostname or IP         │
+│                                               reachable by all nodes;       │
+│                                               required with --nodes > 1     │
+│ --master-port                        <int>    Shared coordinator port for   │
+│                                               multiple nodes (default       │
+│                                               29500)                        │
+│ --no-reexec                                   Print the distributed launch  │
+│                                               command instead of launching  │
+│                                               it                            │
+│ --gate                               <str>    Enable eval-gated training    │
+│                                               with a suite file (shortcut   │
+│                                               for                           │
+│                                               training.eval_gate.enabled=t… │
+│                                               + suite=<path>)               │
+│ --push-as                            <str>    Auto-push each save_steps     │
+│                                               checkpoint to HF Hub as       │
+│                                               'checkpoint-<step>' branch of │
+│                                               the given repo (e.g.          │
+│                                               user/my-model)                │
+│ --hf-resume                                   Download the latest           │
+│                                               checkpoint branch from the    │
+│                                               --push-as repo and resume     │
+│                                               from it. Requires --push-as;  │
+│                                               not supported when            │
+│                                               training.relora_steps is      │
+│                                               configured.                   │
+│ --find-lr                                     LR range finder (v0.32.0):    │
+│                                               run a short geometric LR      │
+│                                               sweep, write a JSON report    │
+│                                               with the recommended LR, then │
+│                                               exit without training.        │
+│ --find-lr-start                      <float>  LR range finder: starting LR  │
+│                                               (default 1e-7)                │
+│                                               [default: 1e-07]              │
+│ --find-lr-end                        <float>  LR range finder: ending LR    │
+│                                               (default 1e-1)                │
+│                                               [default: 0.1]                │
+│ --find-lr-steps                      <int>    LR range finder: number of    │
+│                                               sweep steps (default 100)     │
+│                                               [default: 100]                │
+│ --find-lr-output                     <str>    LR range finder: JSON report  │
+│                                               path (default                 │
+│                                               ./lr_finder.json)             │
+│                                               [default: lr_finder.json]     │
+│ --yes                        -y               Skip the start-training       │
+│                                               confirmation. Required when   │
+│                                               stdin is not a TTY (scripts,  │
+│                                               CI, pipes).                   │
+│ --trust-remote-code                           Allow loading models that     │
+│                                               ship custom Python via        │
+│                                               auto_map. Default deny        │
+│                                               (v0.36.0). Only enable if you │
+│                                               trust the source.             │
+│ --echo-trap-tokenizer-aware                   Use tokenizer-id n-grams for  │
+│                                               echo-trap scoring. Requires   │
+│                                               training.echo_trap_enabled=t… │
+│                                               on grpo/ppo.                  │
+│ --reward-hack-detector               <str>    Reward-hacking detector for   │
+│                                               GRPO/PPO: info_rm |           │
+│                                               rm_ensemble. Overrides        │
+│                                               training.reward_hack_detecto… │
+│                                               (v0.71.26)                    │
+│ --reward-hack-halt                            Auto-halt training on a HACK  │
+│                                               verdict. Requires             │
+│                                               --reward-hack-detector (or    │
+│                                               training.reward_hack_detecto… │
+│                                               (v0.71.26)                    │
+│ --replay                             <str>    Old dataset to interleave as  │
+│                                               continual-learning rehearsal, │
+│                                               so training on the new task   │
+│                                               does not erase the previous   │
+│                                               one. sft/pretrain only;       │
+│                                               incompatible with             │
+│                                               packing/multipack. Overrides  │
+│                                               data.replay. (v0.71.36)       │
+│ --replay-ratio                       <float>  Fraction of the FINAL mixed   │
+│                                               train set that is replay rows │
+│                                               (default 0.1). Overrides      │
+│                                               data.replay_ratio. (v0.71.36) │
+│ --replay-seed                        <int>    Seed for the replay sample +  │
+│                                               interleave. Overrides         │
+│                                               data.replay_seed. (v0.71.36)  │
+│ --reward-hack-mitigation             <str>    Closed-loop reward-hacking    │
+│                                               mitigation mode: off |        │
+│                                               log_only | kl_control |       │
+│                                               pid_lagrangian. Requires      │
+│                                               training.reward_hack_detector │
+│                                               on grpo/ppo. Overrides        │
+│                                               training.reward_hack_mitigat… │
+│                                               (v0.71.26)                    │
+│ --minillm-on-policy                           Use the TRUE on-policy        │
+│                                               MiniLLM teacher-mixed rollout │
+│                                               (v0.71.18 #257) instead of    │
+│                                               the offline distribution      │
+│                                               blend. Requires               │
+│                                               training.minillm_enabled=true │
+│                                               on task='distill'.            │
+│ --profile                                     Record a torch.profiler trace │
+│                                               (Chrome trace JSON) during    │
+│                                               early training steps. Output: │
+│                                               <output>/profiles/<run_id>.t… │
+│ --allow-oom-attempt                           Bypass the analytical         │
+│                                               hardware-fit VRAM gate and    │
+│                                               launch even when the run is   │
+│                                               predicted to run out of GPU   │
+│                                               memory (opt-out).             │
+│ --diagnose-gate                      <str>    After training, run `soup     │
+│                                               diagnose` against the         │
+│                                               supplied evidence JSON (or    │
+│                                               scratch evidence). Refuses to │
+│                                               mark the run successful if    │
+│                                               any failure mode returns      │
+│                                               MAJOR (exit 2) or NOT_RUN     │
+│                                               (exit 3).                     │
+│ --annex-xi                           <str>    After training, render an EU  │
+│                                               AI Act Annex XI/XII auto-doc  │
+│                                               to the given output path      │
+│                                               (cwd-contained). Markdown     │
+│                                               body now; PDF in v0.59.1.     │
+│ --repro-receipt                      <str>    After training, write an SR   │
+│                                               11-7-style reproducibility    │
+│                                               receipt (seeds + kernel       │
+│                                               versions + GPU + OS) to the   │
+│                                               given path. v0.59.0.          │
+│ --capture-activations                <str>    After training, capture       │
+│                                               residual-stream activations   │
+│                                               at the named decoder layer    │
+│                                               (e.g. model.layers.5) on      │
+│                                               --capture-prompts and write   │
+│                                               them to                       │
+│                                               <output>/activations/activat… │
+│                                               for soup probe sae-diff /     │
+│                                               sleeper. v0.71.8 #219.        │
+│ --capture-prompts                    <str>    JSONL (or .txt) of prompts to │
+│                                               run for --capture-activations │
+│                                               (one prompt per line;         │
+│                                               'prompt'/'text' field or raw  │
+│                                               text).                        │
+│ --track-energy                                Measure the training window's │
+│                                               energy + CO2 via codecarbon   │
+│                                               (offline; requires `pip       │
+│                                               install soup-cli[carbon]`).   │
+│                                               Feeds the kWh / CO2 into      │
+│                                               --annex-xi. v0.71.3.          │
+│ --energy-country                     <str>    ISO 3166-1 alpha-3 country    │
+│                                               code for the CO2              │
+│                                               grid-intensity estimate used  │
+│                                               by --track-energy (default    │
+│                                               USA).                         │
+│                                               [default: USA]                │
+│ --energy-out                         <str>    Write the --track-energy      │
+│                                               measurement to this JSON file │
+│                                               (cwd-contained) so `soup bom  │
+│                                               emit --energy <path>` can     │
+│                                               consume it. v0.71.15.         │
+│ --cloud                              <str>    Train on a cloud GPU instead  │
+│                                               of locally (v0.71.18 #16).    │
+│                                               Supported: modal, lambda,     │
+│                                               runpod. Renders a cloud app   │
+│                                               stub from the config          │
+│                                               (plan-only); use              │
+│                                               --cloud-submit to submit      │
+│                                               live.                         │
+│ --gpu                                <str>    Cloud GPU type for --cloud    │
+│                                               (t4 / l4 / a10 / a10g / a100  │
+│                                               / a100-80gb / l40s / h100 /   │
+│                                               a6000). Default a100.         │
+│                                               Provider-specific allowlists  │
+│                                               apply.                        │
+│                                               [default: a100]               │
+│ --cloud-submit                                With --cloud, submit the      │
+│                                               rendered run live via the     │
+│                                               cloud's SDK or API (gated on  │
+│                                               respective provider token/API │
+│                                               key). Default is plan-only    │
+│                                               (render + print the command). │
+│                                               Lambda requires a registered  │
+│                                               SSH key.                      │
+│ --help                                        Show this message and exit.   │
+└─────────────────────────────────────────────────────────────────────────────┘
+

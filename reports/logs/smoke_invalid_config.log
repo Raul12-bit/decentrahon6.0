@@ -1,0 +1,7 @@
+Loading config from 
+C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifacts\c
+pu_smoke\soup.yaml...
+Config validation error:
+
+  data -> max_length: Input should be greater than or equal to 64
+[solution] Triton is not importable: running plain Soup

@@ -1,0 +1,13 @@
+{
+  "name": "mypy_fixed",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "mypy",
+    "solution",
+    "--ignore-missing-imports",
+    "--follow-imports=skip"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 2.3356063999963226
+}

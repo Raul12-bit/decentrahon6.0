@@ -280,7 +280,7 @@ def _norm_bwd(dy, dres, x, weight, rstd, with_delta: bool):
     dx.copy_(r * dn - x * (r * r * r * dot / n_cols))
     if dres is not None:
         dx += dres
-    if with_delta:
+    if ddelta is not None:
         ddelta.copy_(dx.to(torch.float16))
     return dx, ddelta
 
@@ -360,7 +360,9 @@ class RopeLoraScatterFunction(torch.autograd.Function):
                 half = head_dim // 2
                 rot = torch.cat((-x[..., half:], x[..., :half]), dim=-1)
                 x = x * c + rot * s
-            flat = out.permute(0, 2, 1, 3).reshape(batch * seq, n_heads, head_dim)
+            # With one head (or one batch) reshape can alias out. Copying a permuted
+            # view back into that storage is rejected by PyTorch's overlap check.
+            flat = out.permute(0, 2, 1, 3).reshape(batch * seq, n_heads, head_dim).clone()
             flat.index_copy_(0, dst, x)
             out.copy_(flat.view(batch, seq, n_heads, head_dim).permute(0, 2, 1, 3))
         ctx.save_for_backward(cos2, sin2, cos_row, dst)

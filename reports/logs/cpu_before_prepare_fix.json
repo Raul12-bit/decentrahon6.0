@@ -1,0 +1,14 @@
+{
+  "name": "cpu_before_prepare_fix",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "reports/test_cpu_validation.py",
+    "-q",
+    "-k",
+    "manual_prepare"
+  ],
+  "exit_code": 1,
+  "wall_seconds": 58.33135399999446
+}

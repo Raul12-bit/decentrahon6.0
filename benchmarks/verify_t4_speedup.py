@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
-import subprocess
 import sys
 import tempfile
 import time
@@ -53,7 +53,7 @@ def _worker(args) -> None:
 
         applied = solution.apply()
 
-    record = {"side": args.side, "applied": applied, "step_s": [], "logs": []}
+    record = {"side": args.side, "applied": applied, "step_s": [], "logs": [], "exit_code": 0}
 
     class Probe(transformers.TrainerCallback):
         def on_step_begin(self, train_args, state, control, **kwargs):
@@ -84,11 +84,12 @@ def _worker(args) -> None:
 
         run()
     except SystemExit as exc:
-        record["exit_code"] = 0 if exc.code is None else exc.code
+        record["exit_code"] = 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
     record["wall_s"] = round(time.perf_counter() - started, 2)
     record["max_allocated_mib"] = round(torch.cuda.max_memory_allocated() / 2**20, 1)
     record["max_reserved_mib"] = round(torch.cuda.max_memory_reserved() / 2**20, 1)
     Path(args.result).write_text(json.dumps(record, indent=2), encoding="utf-8")
+    raise SystemExit(record["exit_code"])
 
 
 # --------------------------------------------------------------------------------------- main
@@ -123,8 +124,11 @@ def _run_side(side: str, args, out: Path) -> dict:
     data = json.loads(result.read_text(encoding="utf-8")) if result.exists() else {}
     data.update(process_exit=code, process_wall_s=wall, nvidia_smi_peak_mib=peak,
                 gpu_start_mib=start)
-    if code != 0 or not data.get("logs"):
+    if code != 0 or data.get("exit_code") != 0 or not data.get("logs"):
         raise SystemExit(f"[bench] {side} failed (exit {code}), see {run_dir / 'train.log'}")
+    if len(data.get("step_s", [])) != args.steps or len(data["logs"]) != args.steps:
+        raise SystemExit(f"[bench] {side} did not complete and log all {args.steps} requested steps; "
+                         f"see {run_dir / 'train.log'}")
     return data
 
 
@@ -148,7 +152,19 @@ def _compare_curves(base: dict, sol: dict) -> list[str]:
     import torch
 
     problems = []
-    n = min(len(base["logs"]), len(sol["logs"]))
+    if not base.get("logs") or not sol.get("logs"):
+        return ["empty training curves"]
+    if len(base["logs"]) != len(sol["logs"]):
+        return ["training curve lengths differ: the runs did not complete the same steps"]
+    n = len(base["logs"])
+    for side, data in (("base", base), ("solution", sol)):
+        for row in data["logs"]:
+            for key in ("loss", "entropy", "mean_token_accuracy", "num_tokens"):
+                value = row.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    problems.append(f"{side}: missing or non-finite {key}")
+    if problems:
+        return problems
     for key, rtol in (("loss", 1e-2), ("entropy", 3e-2), ("mean_token_accuracy", 3e-2)):
         b = torch.tensor([e[key] for e in base["logs"][:n]], dtype=torch.float64)
         s = torch.tensor([e[key] for e in sol["logs"][:n]], dtype=torch.float64)
@@ -183,6 +199,8 @@ def main() -> None:
         args.side = args.worker
         _worker(args)
         return
+    if args.steps < 3:
+        parser.error("--steps must be at least 3 (two warmup steps and one timed step)")
     if not Path(args.train_file).exists():
         raise SystemExit(f"{args.train_file} is missing: run `python task/prepare_data.py` first")
     out = Path(args.out or tempfile.mkdtemp(prefix="soup_bench_")).resolve()

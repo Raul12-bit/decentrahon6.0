@@ -1,0 +1,129 @@
+FFFF                                                                     [100%]
+================================== FAILURES ===================================
+___________________ test_ce_rejects_out_of_range_labels[-1] ___________________
+
+target = -1
+
+    @pytest.mark.parametrize("target", [-1, 11])
+    def test_ce_rejects_out_of_range_labels(target):
+>       with pytest.raises((ValueError, IndexError)):
+E       Failed: DID NOT RAISE any of (ValueError, IndexError)
+
+reports\test_cpu_validation.py:131: Failed
+___________________ test_ce_rejects_out_of_range_labels[11] ___________________
+
+target = 11
+
+    @pytest.mark.parametrize("target", [-1, 11])
+    def test_ce_rejects_out_of_range_labels(target):
+        with pytest.raises((ValueError, IndexError)):
+>           fused_linear_cross_entropy(torch.ones(1, 8), torch.ones(11, 8).half(),
+                                       torch.tensor([target]))
+
+reports\test_cpu_validation.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+solution\triton_cross_entropy.py:270: in fused_linear_cross_entropy
+    loss, token_loss, token_entropy, hits = ChunkedLinearCrossEntropyFunction.apply(
+..\.soup-audit-venv\Lib\site-packages\torch\autograd\function.py:576: in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+solution\triton_cross_entropy.py:195: in forward
+    _launch_ce_kernel(logits, tgt, token_loss, token_entropy, hits, coef, start,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+logits = tensor([[8., 8., 8., 8., 8., 8., 8., 8., 8., 8., 8.]], dtype=torch.float16)
+targets = tensor([11]), token_loss = tensor([-8.8593e+09])
+token_entropy = tensor([2.3979]), hits = tensor([1], dtype=torch.int32)
+coef = tensor([1.]), row_start = 0, grad = False
+
+    def _launch_ce_kernel(logits, targets, token_loss, token_entropy, hits, coef, row_start, grad):
+        n = logits.shape[0]
+        if n == 0:
+            return
+        if triton is not None and _runtime.device_ok(logits):
+            _cross_entropy_fwd_bwd_inplace_kernel[(n,)](
+                logits, logits.stride(0), targets, token_loss, token_entropy, hits, coef,
+                row_start, logits.shape[1], int(bool(grad)), BLOCK_V=BLOCK_V, num_warps=NUM_WARPS)
+            return
+        # Plain PyTorch, same math (no Triton / CPU without the interpreter).
+        z = logits.float()
+        tgt = targets[row_start:row_start + n]
+        lab = tgt != IGNORE_INDEX
+        lse = torch.logsumexp(z, dim=-1)
+        p = torch.exp(z - lse[:, None])
+        token_entropy[row_start:row_start + n] = lse - (p * z).sum(-1)
+>       zt = z.gather(1, tgt.clamp(min=0)[:, None]).squeeze(1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       RuntimeError: index 11 is out of bounds for dimension 1 with size 11
+
+solution\triton_cross_entropy.py:245: RuntimeError
+____________________ test_ce_rejects_nonpositive_chunk[-1] ____________________
+
+chunk = -1
+
+    @pytest.mark.parametrize("chunk", [-1, 0])
+    def test_ce_rejects_nonpositive_chunk(chunk):
+        with pytest.raises(ValueError):
+>           fused_linear_cross_entropy(torch.ones(1, 8), torch.ones(11, 8).half(),
+                                       torch.tensor([1]), chunk=chunk)
+
+reports\test_cpu_validation.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+solution\triton_cross_entropy.py:270: in fused_linear_cross_entropy
+    loss, token_loss, token_entropy, hits = ChunkedLinearCrossEntropyFunction.apply(
+..\.soup-audit-venv\Lib\site-packages\torch\autograd\function.py:576: in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+ctx = <torch.autograd.function.ChunkedLinearCrossEntropyFunctionBackward object at 0x0000019F55EEF8A0>
+hidden = tensor([[1., 1., 1., 1., 1., 1., 1., 1.]])
+weight16 = tensor([[1., 1., 1., 1., 1., 1., 1., 1.],
+        [1., 1., 1., 1., 1., 1., 1., 1.],
+        [1., 1., 1., 1., 1., 1., 1... 1., 1., 1.],
+        [1., 1., 1., 1., 1., 1., 1., 1.],
+        [1., 1., 1., 1., 1., 1., 1., 1.]], dtype=torch.float16)
+targets = tensor([1]), num_items = None, grad_scale = None, chunk = -1
+n_labelled = 1
+
+    @staticmethod
+    def forward(ctx, hidden, weight16, targets, num_items, grad_scale, chunk, n_labelled):
+        device = hidden.device
+        n_rows, hidden_size = hidden.shape
+        vocab = weight16.shape[0]
+        with_grad = bool(ctx.needs_input_grad[0])
+        with torch.autocast(device_type=device.type, enabled=False):
+            labelled = targets != IGNORE_INDEX
+            # Labelled rows first (stable), so the gradient GEMM skips the unlabelled ones.
+            order = torch.argsort((~labelled).to(torch.int8), stable=True)
+            h16 = hidden.index_select(0, order).to(torch.float16)
+            tgt = targets.index_select(0, order).contiguous()
+            token_loss = torch.empty(n_rows, dtype=torch.float32, device=device)
+            token_entropy = torch.empty(n_rows, dtype=torch.float32, device=device)
+            hits = torch.empty(n_rows, dtype=torch.int32, device=device)
+            scale = _as_scale(grad_scale, device)
+            den = _denominator(num_items, n_labelled, device)
+            coef = (scale / den).reshape(1).contiguous()
+            grad16 = (torch.empty((n_labelled, hidden_size), dtype=torch.float16, device=device)
+                      if with_grad else None)
+>           buf = torch.empty((min(chunk, max(n_rows, 1)), vocab), dtype=torch.float16,
+                              device=device)
+E           RuntimeError: Trying to create tensor with negative dimension -1: [-1, 11]
+
+solution\triton_cross_entropy.py:188: RuntimeError
+____________________ test_ce_rejects_nonpositive_chunk[0] _____________________
+
+chunk = 0
+
+    @pytest.mark.parametrize("chunk", [-1, 0])
+    def test_ce_rejects_nonpositive_chunk(chunk):
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+reports\test_cpu_validation.py:138: Failed
+=========================== short test summary info ===========================
+FAILED reports/test_cpu_validation.py::test_ce_rejects_out_of_range_labels[-1]
+FAILED reports/test_cpu_validation.py::test_ce_rejects_out_of_range_labels[11]
+FAILED reports/test_cpu_validation.py::test_ce_rejects_nonpositive_chunk[-1]
+FAILED reports/test_cpu_validation.py::test_ce_rejects_nonpositive_chunk[0]
+4 failed, 43 deselected in 3.92s

@@ -1,0 +1,9 @@
+{
+  "name": "static_inventory",
+  "command": [
+    "python",
+    "reports/inspect_project.py"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 1.1917396999924676
+}

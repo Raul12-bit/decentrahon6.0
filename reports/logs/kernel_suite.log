@@ -1,0 +1,26 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\.soup-audit-venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0
+plugins: anyio-4.15.1
+collecting ... collected 16 items
+
+solution/test_kernels.py::test_swiglu_matches_pytorch[shape0-dtype0] SKIPPED [  6%]
+solution/test_kernels.py::test_swiglu_matches_pytorch[shape0-dtype1] SKIPPED [ 12%]
+solution/test_kernels.py::test_swiglu_matches_pytorch[shape1-dtype0] SKIPPED [ 18%]
+solution/test_kernels.py::test_swiglu_matches_pytorch[shape1-dtype1] SKIPPED [ 25%]
+solution/test_kernels.py::test_fused_linear_cross_entropy[300-151936-128] SKIPPED [ 31%]
+solution/test_kernels.py::test_fused_linear_cross_entropy[37-5003-16] SKIPPED [ 37%]
+solution/test_kernels.py::test_add_rmsnorm_forward_backward SKIPPED      [ 43%]
+solution/test_kernels.py::test_rope_lora_scatter[True-True] SKIPPED      [ 50%]
+solution/test_kernels.py::test_rope_lora_scatter[True-False] SKIPPED     [ 56%]
+solution/test_kernels.py::test_rope_lora_scatter[False-True] SKIPPED     [ 62%]
+solution/test_kernels.py::test_fp16_swiglu SKIPPED (needs a CUDA GPU)    [ 68%]
+solution/test_kernels.py::test_nf4_dequant_is_bitsandbytes_bit_for_bit[shape0] SKIPPED [ 75%]
+solution/test_kernels.py::test_nf4_dequant_is_bitsandbytes_bit_for_bit[shape1] SKIPPED [ 81%]
+solution/test_kernels.py::test_nf4_dequant_is_bitsandbytes_bit_for_bit[shape2] SKIPPED [ 87%]
+solution/test_kernels.py::test_nf4_linear_matches_bitsandbytes_forward_backward SKIPPED [ 93%]
+solution/test_kernels.py::test_fast_path_matches_base_on_tiny_4bit_qwen2 SKIPPED [100%]
+
+- generated xml file: C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\logs\kernels.xml -
+============================= 16 skipped in 4.46s =============================

@@ -1,0 +1,15 @@
+{
+  "name": "regressions",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "tests/",
+    "-k",
+    "not slow",
+    "-v",
+    "--junitxml=reports/logs/regressions.xml"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 116.26732919999631
+}

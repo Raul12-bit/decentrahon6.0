@@ -264,11 +264,30 @@ def fused_linear_cross_entropy(
     `hidden` [N, H] are the final hidden states of real tokens, `targets` [N] the label each of
     them predicts (IGNORE_INDEX where none). Returns the loss and the per-row statistics.
     """
+    chunk = _runtime.CE_CHUNK if chunk is None else chunk
+    if not isinstance(chunk, int) or isinstance(chunk, bool) or chunk <= 0:
+        raise ValueError("chunk must be a positive integer")
+    if hidden.ndim != 2 or weight16.ndim != 2 or targets.ndim != 1:
+        raise ValueError("expected hidden [N, H], weight [V, H], targets [N]")
+    if hidden.shape[1] != weight16.shape[1] or hidden.shape[0] != targets.shape[0] or weight16.shape[0] == 0:
+        raise ValueError("incompatible hidden, weight or target shapes")
+    if hidden.device != weight16.device or hidden.device != targets.device:
+        raise ValueError("hidden, weight and targets must be on the same device")
+    if targets.dtype != torch.int64:
+        raise ValueError("targets must have dtype int64")
+    if weight16.requires_grad:
+        raise ValueError("fused_linear_cross_entropy requires a frozen weight")
+    labelled = targets != IGNORE_INDEX
+    invalid = labelled & ((targets < 0) | (targets >= weight16.shape[0]))
+    # Validate before the Triton target load; an invalid label must never become
+    # an out-of-bounds GPU pointer. Transfer both counts in the existing host sync.
+    n_labelled, n_invalid = torch.stack((labelled.sum(), invalid.sum())).tolist()
+    if n_invalid:
+        raise ValueError("targets must be -100 or an index in [0, vocab_size)")
     if weight16.dtype != torch.float16:
         weight16 = weight16.to(torch.float16)  # transient: the gradient is taken in forward
-    n_labelled = int((targets != IGNORE_INDEX).sum())  # the one host sync: sizes the partitions
     loss, token_loss, token_entropy, hits = ChunkedLinearCrossEntropyFunction.apply(
-        hidden, weight16, targets, num_items, grad_scale, chunk or _runtime.CE_CHUNK, n_labelled)
+        hidden, weight16, targets, num_items, grad_scale, chunk, n_labelled)
     return loss, CEStats(token_loss, token_entropy, hits, n_labelled)
 
 

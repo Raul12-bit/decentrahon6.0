@@ -1,0 +1,10 @@
+{
+  "name": "task_config",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-c",
+    "from pathlib import Path; from soup_cli.config.loader import load_config; c=load_config(Path('task/task.yaml')); print(dict(base=c.base,task=c.task,batch=c.training.batch_size,max_length=c.data.max_length,quantization=c.training.quantization,gradient_checkpointing=c.training.gradient_checkpointing,stream_layers=c.training.stream_layers,packing=c.training.packing,multipack=c.training.multipack))"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 1.1637134000047809
+}

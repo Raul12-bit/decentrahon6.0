@@ -1,0 +1,11 @@
+{
+  "name": "dependency_check",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pip",
+    "check"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 6.566651999994065
+}

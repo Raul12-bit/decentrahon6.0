@@ -1,0 +1,27 @@
+{
+  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "executable": "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "versions": {
+    "soup-cli": "0.77.0",
+    "torch": "2.8.0+cpu",
+    "transformers": "5.16.1",
+    "peft": "0.20.0",
+    "trl": "0.29.1",
+    "accelerate": "1.14.0",
+    "bitsandbytes": "0.50.2",
+    "triton": null,
+    "datasets": "5.1.0",
+    "pytest": "9.2.0",
+    "ruff": "0.17.3",
+    "mypy": "2.4.1"
+  },
+  "torch_cuda_runtime": null,
+  "torch_cuda_available": false,
+  "nvidia_smi_exit": 0,
+  "nvidia_smi": "name, compute_cap, memory.total [MiB], memory.free [MiB], driver_version\nNVIDIA GeForce RTX 3050 Laptop GPU, 8.6, 4096 MiB, 3977 MiB, 527.54\n",
+  "ram_total_bytes": 8296849408,
+  "ram_available_bytes": 746643456,
+  "cpu": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "cpu_logical_cores": 12
+}

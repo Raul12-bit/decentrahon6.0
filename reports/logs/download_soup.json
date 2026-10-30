@@ -1,0 +1,16 @@
+{
+  "name": "download_soup",
+  "command": [
+    "python",
+    "-m",
+    "pip",
+    "download",
+    "soup-cli==0.77.0",
+    "--no-deps",
+    "--dest",
+    "../.soup-audit-source",
+    "--disable-pip-version-check"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 7.0661656000011135
+}

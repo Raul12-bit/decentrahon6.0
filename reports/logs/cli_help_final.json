@@ -1,0 +1,9 @@
+{
+  "name": "cli_help_final",
+  "command": [
+    "../.soup-audit-venv/Scripts/soup.exe",
+    "--help"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 1.5106838000065181
+}

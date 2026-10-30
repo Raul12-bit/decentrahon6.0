@@ -1,0 +1,56 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_________ test_manual_prepare_does_not_mutate_unsupported_model[True] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000026F92668550>
+disabled = True
+
+    @pytest.mark.parametrize("disabled", [True, False])
+    def test_manual_prepare_does_not_mutate_unsupported_model(monkeypatch, disabled):
+        from transformers import Qwen2Config, Qwen2ForCausalLM
+        from solution import _runtime, patch_model as pm
+        config = Qwen2Config(vocab_size=16, hidden_size=16, intermediate_size=32,
+                             num_hidden_layers=1, num_attention_heads=2,
+                             num_key_value_heads=1, tie_word_embeddings=True)
+        model = Qwen2ForCausalLM(config).half().float().requires_grad_(False)
+        original = model.lm_head.weight
+        monkeypatch.setattr(_runtime, "INTERPRET", True)
+        monkeypatch.setattr(_runtime, "ENABLED", not disabled)
+        # Deliberately not a quantized eligible model, even if interpreter mode was requested.
+        report = pm.apply_t4_triton_patches(model)
+>       assert not report["fast_path"] and not report["fp16_table"]
+E       assert (not False and not True)
+
+reports\test_cpu_validation.py:193: AssertionError
+---------------------------- Captured stderr call -----------------------------
+[solution] fast path off for this model: layer 0: q_proj is not a 4-bit Linear (+ plain LoRA)
+[solution] prepared {'model': 'Qwen2ForCausalLM', 'fp16_table': True, 'fast_path': False}
+________ test_manual_prepare_does_not_mutate_unsupported_model[False] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000026F97FC3D10>
+disabled = False
+
+    @pytest.mark.parametrize("disabled", [True, False])
+    def test_manual_prepare_does_not_mutate_unsupported_model(monkeypatch, disabled):
+        from transformers import Qwen2Config, Qwen2ForCausalLM
+        from solution import _runtime, patch_model as pm
+        config = Qwen2Config(vocab_size=16, hidden_size=16, intermediate_size=32,
+                             num_hidden_layers=1, num_attention_heads=2,
+                             num_key_value_heads=1, tie_word_embeddings=True)
+        model = Qwen2ForCausalLM(config).half().float().requires_grad_(False)
+        original = model.lm_head.weight
+        monkeypatch.setattr(_runtime, "INTERPRET", True)
+        monkeypatch.setattr(_runtime, "ENABLED", not disabled)
+        # Deliberately not a quantized eligible model, even if interpreter mode was requested.
+        report = pm.apply_t4_triton_patches(model)
+>       assert not report["fast_path"] and not report["fp16_table"]
+E       assert (not False and not True)
+
+reports\test_cpu_validation.py:193: AssertionError
+---------------------------- Captured stderr call -----------------------------
+[solution] fast path off for this model: layer 0: q_proj is not a 4-bit Linear (+ plain LoRA)
+[solution] prepared {'model': 'Qwen2ForCausalLM', 'fp16_table': True, 'fast_path': False}
+=========================== short test summary info ===========================
+FAILED reports/test_cpu_validation.py::test_manual_prepare_does_not_mutate_unsupported_model[True]
+FAILED reports/test_cpu_validation.py::test_manual_prepare_does_not_mutate_unsupported_model[False]
+2 failed, 45 deselected in 54.59s

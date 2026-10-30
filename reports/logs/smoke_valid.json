@@ -1,0 +1,9 @@
+{
+  "name": "smoke_valid",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "reports/smoke_train.py"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 52.83012179999787
+}

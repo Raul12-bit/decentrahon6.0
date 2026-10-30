@@ -1,0 +1,199 @@
+                                                                               
+ Usage: soup [OPTIONS] COMMAND [ARGS]...                                       
+                                                                               
+ Fine-tune and post-train LLMs in one command. No SSH, no config hell.         
+                                                                               
+ GitHub: https://github.com/MakazhanAlpamys/Soup                               
+                                                                               
+┌─ Options ───────────────────────────────────────────────────────────────────┐
+│ --version                            Show Soup CLI version.                 │
+│ --verbose             -V             Show full traceback on errors          │
+│ --log-level                   <str>  Logging tier: quiet | normal | verbose │
+│                                      | debug                                │
+│                                      [default: normal]                      │
+│ --no-audit-log                       Disable the local HIPAA/SOC2 audit log │
+│                                      for this invocation (also via          │
+│                                      SOUP_NO_AUDIT_LOG=1). Default: a       │
+│                                      one-line record per command under      │
+│                                      ~/.soup/audit.jsonl. v0.71.3.          │
+│ --no-telemetry                       Opt-out of anonymous hardware-only     │
+│                                      telemetry for this run.                │
+│ --install-completion                 Install completion for the current     │
+│                                      shell.                                 │
+│ --show-completion                    Show completion for the current shell, │
+│                                      to copy it or customize the            │
+│                                      installation.                          │
+│ --help                               Show this message and exit.            │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─ Commands ──────────────────────────────────────────────────────────────────┐
+│ init                        Create a new soup.yaml config interactively or  │
+│                             from a template.                                │
+│ train                       Start training from a soup.yaml config.         │
+│ chat                        Chat with a fine-tuned model in the terminal.   │
+│ cost                        Estimate training cost in USD across cloud      │
+│                             providers.                                      │
+│ push                        Push a trained model to HuggingFace Hub (or     │
+│                             alternate hub).                                 │
+│ export                      Export a model to GGUF, ONNX, TensorRT-LLM,     │
+│                             BitNet, or TorchAO format.                      │
+│ merge                       Merge a LoRA adapter with its base model into a │
+│                             full model.                                     │
+│ card                        Generate a HuggingFace model card from a        │
+│                             registry entry.                                 │
+│ migrate                     Import a config from LLaMA-Factory, Axolotl, or │
+│                             Unsloth notebook.                               │
+│ serve                       Start a local inference server with             │
+│                             OpenAI-compatible API.                          │
+│ sweep                       Run hyperparameter sweep: grid or random search │
+│                             over training parameters.                       │
+│ diff                        Compare outputs of two models side-by-side on   │
+│                             the same prompts.                               │
+│ infer                       Run batch inference on a JSONL file of prompts. │
+│ profile                     Estimate memory, speed, and GPU requirements    │
+│                             BEFORE training.                                │
+│ doctor                      Check system dependencies, GPU, and             │
+│                             compatibility.                                  │
+│ quickstart                  Run a complete demo: create sample data,        │
+│                             config, and train.                              │
+│ ui                          Launch the Soup Web UI.                         │
+│ autopilot                   Autopilot: give model+data+goal, Soup picks     │
+│                             optimal hyperparameters.                        │
+│ history                     Show the lineage tree for all entries with a    │
+│                             given name.                                     │
+│ why                         Explain training anomalies for a run in plain   │
+│                             English.                                        │
+│ rewind                      Name the dataset rows behind a loss spike, from │
+│                             the training flight recorder.                   │
+│ tui                         Full-screen terminal dashboard: list runs,      │
+│                             inspect metrics, tail logs.                     │
+│ monitor                     Live GPU monitor: Util / Temp / VRAM / Power    │
+│                             per GPU.                                        │
+│ fetch                       Fetch a ready-to-edit example config from the   │
+│                             bundled catalog.                                │
+│ quantize                    Quantize a model - ergonomic alias for `soup    │
+│                             export --format <to>`.                          │
+│ merge-sharded-fsdp-weights  Consolidate FSDP shard files into a single      │
+│                             safetensors file.                               │
+│ delinearize-llama4          Delinearize Llama 4 fused expert weights to 3-D │
+│                             form.                                           │
+│ diagnose                    Post-training report card: forgetting / refusal │
+│                             / format / mode_collapse / memorization /       │
+│                             contamination (v0.56.0).                        │
+│ airgap-bundle               Build a signed tarball with model + datasets +  │
+│                             wheels + kernels (v0.60.0).                     │
+│ ingest                      Universal trace importer: Langfuse / LangSmith  │
+│                             / Helicone / OpenPipe / OTel / OpenAI Stored    │
+│                             Completions (v0.63.0).                          │
+│ prune-prompt                Detect + strip a shared system-prompt prefix    │
+│                             across training data so the FT model            │
+│                             internalises it (v0.63.0).                      │
+│ ab                          Two-sided mSPRT sequential A/B harness on       │
+│                             latency / judge_score / retry_rate: reports     │
+│                             whether the treatment is better or worse, valid │
+│                             under re-running after every new row (v0.63.0). │
+│ drift-alarm                 Rolling-KL drift alarm on output-token          │
+│                             distribution with optional Slack/Discord        │
+│                             webhook (v0.63.0).                              │
+│ tunability                  Probe-train 6-10 small bases on a held-out      │
+│                             slice + report Pareto frontier of (eval delta,  │
+│                             train cost, license) (v0.64.0).                 │
+│ plan                        Render a pre-flight training plan (cost / ETA / │
+│                             SHA / VRAM) and write soup.tfstate for `soup    │
+│                             apply` to consult (v0.64.0).                    │
+│ apply                       Execute the planned training run, refusing on   │
+│                             drift between soup.yaml and soup.tfstate        │
+│                             (v0.64.0).                                      │
+│ completions                 Emit a bash / zsh / fish completion script. Use │
+│                             with `eval "$(soup completions bash)"`          │
+│                             (v0.64.0).                                      │
+│ license-advisor             Recommend a license-clean base for a deploy     │
+│                             target (b2c / defense / embedded) + flag        │
+│                             downstream risk (v0.64.0).                      │
+│ compile                     Compile a DSPy / GEPA prompt program against an │
+│                             eval suite (v0.68.0).                           │
+│ distill-prompt              Distill prompt-heavy traces into a small FT     │
+│                             plan (v0.68.0).                                 │
+│ compile-tools               Compile / optimize tool schemas + descriptions  │
+│                             (v0.68.0).                                      │
+│ apple-adapter               Convert / sign HF / MLX / Apple                 │
+│                             FoundationModels adapters (v0.68.0).            │
+│ build                       dbt-for-SFT DAG: validate, plan, and            │
+│                             materialise dataset transforms.                 │
+│ expect                      Run an expectations suite against a JSONL       │
+│                             dataset.                                        │
+│ shrink                      Depth-prune a model (drop the least-important   │
+│                             contiguous layer block by residual angular      │
+│                             distance) + optional distill-heal (v0.71.29).   │
+│ version                     Show Soup CLI version.                          │
+│ ci                          Fine-tuning CI: init a PR gate workflow.        │
+│ data                        Dataset tools: inspect, convert, merge, dedup,  │
+│                             validate, stats.                                │
+│ deploy                      Deploy models: Ollama integration (deploy,      │
+│                             list, remove).                                  │
+│ runs                        Experiment tracking: list, show, compare runs.  │
+│ eval                        Evaluate models: benchmarks, custom evals, LLM  │
+│                             judge, leaderboard.                             │
+│ adapters                    Adapter management: list, info, compare LoRA    │
+│                             adapters.                                       │
+│ recipes                     Ready-made configs: list, show, use, search     │
+│                             recipes for popular models.                     │
+│ bench                       Benchmark a model: inference speed (infer, the  │
+│                             default) or training (train).                   │
+│ registry                    Model Registry: push, list, show, diff, search, │
+│                             promote, delete.                                │
+│ spectrum                    Spectrum SNR scan for targeted training         │
+│                             (v0.71.23).                                     │
+│ can                         Soup Cans: pack/inspect/verify/fork shareable   │
+│                             .can artifacts.                                 │
+│ llama                       Proxy to llama.cpp binaries (cli / mtmd-cli /   │
+│                             gguf-split / server).                           │
+│ plugins                     Discover, list, enable, and disable Soup        │
+│                             plugins.                                        │
+│ agent                       Agent Forge: spec -> tool-calling dataset /     │
+│                             train / eval (v0.46.0).                         │
+│ tokenizer                   Tokenizer tools: train a BPE tokenizer from     │
+│                             JSONL (v0.53.9).                                │
+│ advise                      Pre-flight decision: PROMPT_ENG / RAG / SFT /   │
+│                             DPO / GRPO. Run BEFORE you spend 8 hours on a   │
+│                             GPU (v0.54.0).                                  │
+│ ship                        SHIP / DON'T SHIP verdict after fine-tuning:    │
+│                             task win AND no catastrophic forgetting, fused  │
+│                             into one decision (v0.71.25).                   │
+│ loop                        Data flywheel: traces -> preference pairs ->    │
+│                             DPO -> gate -> canary deploy -> rollback, all   │
+│                             from the CLI (v0.58.0).                         │
+│ bom                         CycloneDX ML-BOM + SPDX AI bill-of-materials    │
+│                             emitter (v0.59.0).                              │
+│ attest                      In-toto + SLSA-3 attestations per Soup Can      │
+│                             stage (v0.59.0).                                │
+│ audit-log                   HIPAA/SOC2-shaped JSONL audit log: tail +       │
+│                             rotate (v0.59.0).                               │
+│ edit                        Knowledge editing (ROME / MEMIT / AlphaEdit) -  │
+│                             patch facts without re-training (v0.61.0).      │
+│ steer                       Activation steering (CAA / ITI / RepE) -        │
+│                             inference-time intervention without retraining  │
+│                             (v0.62.0).                                      │
+│ env                         Hermetic env lockfile + ABI drift detection     │
+│                             (v0.64.0).                                      │
+│ probe                       Activation probes: sleeper-agent defection /    │
+│                             honesty / misuse / pairwise interference / SAE  │
+│                             feature diff / probe pack (v0.66.0, truth+harm  │
+│                             v0.71.8).                                       │
+│ lock                        Shared run lockfile (write / show / check).     │
+│ local-rl                    Personal-LLM flywheel daemon (init / status /   │
+│                             record / harvest / train) (v0.68.0).            │
+│ iterative-dpo               Iterative DPO sample, score, pair, and train    │
+│                             loop.                                           │
+│ ra-dit                      RA-DIT two-stage orchestrator: retriever ->     │
+│                             generator (v0.71.10).                           │
+│ mcp                         Model Context Protocol server - drive Soup from │
+│                             any MCP client (v0.71.28).                      │
+│ draft                       Train + measure a speculative-decoding draft    │
+│                             model: distil your tuned model into a tiny      │
+│                             draft, then serve it with --auto-spec           │
+│                             (v0.71.33).                                     │
+│ reward                      Synthesize a deterministic reward verifier from │
+│                             reference outputs, with a calibration report    │
+│                             that refuses degenerate verifiers (v0.71.40).   │
+└─────────────────────────────────────────────────────────────────────────────┘
+

@@ -1,0 +1,14 @@
+{
+  "name": "cpu_input_fixed",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "reports/test_cpu_validation.py",
+    "-q",
+    "-k",
+    "out_of_range or nonpositive or ce_"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 5.3310961999959545
+}

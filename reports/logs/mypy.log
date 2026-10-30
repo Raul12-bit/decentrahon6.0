@@ -1,0 +1,3 @@
+solution\triton_ops.py:284: error: Item "None" of "Any | None" has no attribute "copy_"  [union-attr]
+solution\patch_model.py:175: error: Incompatible return value type (got "Any | Literal[True]", expected "str | None")  [return-value]
+Found 2 errors in 2 files (checked 9 source files)

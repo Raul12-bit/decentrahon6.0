@@ -171,7 +171,7 @@ def _mlp(mlp, x32):
 def _model_reason(lm) -> Optional[str]:
     """None if the fast path covers this model, else why not. Cached on the model."""
     cached = getattr(lm, "_soup_fast_reason", False)
-    if cached is not False:
+    if cached is None or isinstance(cached, str):
         return cached
     reason = _compute_model_reason(lm)
     try:
@@ -186,6 +186,8 @@ def _model_reason(lm) -> Optional[str]:
 def _compute_model_reason(lm) -> Optional[str]:
     config = lm.config
     model = lm.model
+    if getattr(config, "_attn_implementation", None) != "sdpa":
+        return "attention backend is not sdpa"
     if getattr(config, "hidden_act", "silu") != "silu":
         return "hidden_act is not silu"
     if any(t != "full_attention" for t in getattr(config, "layer_types", ["full_attention"])):
@@ -297,10 +299,17 @@ def _patched_causal_lm_forward(self, input_ids=None, attention_mask=None, positi
         reason = _step_reason(self, input_ids, inputs_embeds, labels, past_key_values,
                               use_cache, logits_to_keep, position_ids, kwargs)
         if reason is None:
+            # A late kernel failure can happen after LoRA dropout consumed RNG.
+            # Retry base with the same masks, preserving the successful path's RNG advance.
+            cpu_rng = torch.get_rng_state()
+            cuda_rng = torch.cuda.get_rng_state(input_ids.device) if input_ids.is_cuda else None
             try:
                 return _fast_forward(self, input_ids, attention_mask, labels,
                                      kwargs.get("num_items_in_batch"), request)
             except Exception as exc:  # noqa: BLE001 - never crash a run: plain path from now on
+                torch.set_rng_state(cpu_rng)
+                if cuda_rng is not None:
+                    torch.cuda.set_rng_state(cuda_rng, input_ids.device)
                 request.result = None
                 object.__setattr__(self, "_soup_fast_reason", f"fast forward raised {exc!r}")
                 _runtime.log(f"fast path off: {exc!r}")
@@ -492,12 +501,18 @@ def apply_t4_triton_patches(model) -> dict:
         return report
     if not isinstance(lm, mq.Qwen2ForCausalLM):
         return report
+    if not _runtime.ENABLED or not _runtime.device_ok(lm.lm_head.weight):
+        return report
+    if hasattr(lm, "_soup_fast_reason"):
+        del lm._soup_fast_reason
+    if _model_reason(lm) is not None:
+        return report
+    # Eligibility must precede any mutation: unsupported models keep their original
+    # head dtype and forward even when manual preparation was requested.
     if _runtime.FP16_EMBED and getattr(lm, "_soup_fp16_table", None) is None:
         report["fp16_table"] = _store_table_fp16(lm)
     else:
         report["fp16_table"] = getattr(lm, "_soup_fp16_table", None) is not None
-    if hasattr(lm, "_soup_fast_reason"):
-        del lm._soup_fast_reason
     report["fast_path"] = _model_reason(lm) is None
     if report["fast_path"]:
         # Compiled and checked against PyTorch on this GPU (normally already done by the
@@ -506,6 +521,8 @@ def apply_t4_triton_patches(model) -> dict:
 
         problems = ensure_checked(lm.config, lm.lm_head.weight.device)
         if problems:
+            restore_t4_triton_patches(model)
+            report["fp16_table"] = False
             reason = "kernel self-check: " + "; ".join(problems)
             object.__setattr__(lm, "_soup_fast_reason", reason)
             report["fast_path"] = False

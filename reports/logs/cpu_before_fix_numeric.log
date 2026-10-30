@@ -1,0 +1,205 @@
+.....................FF.....FF.                                          [100%]
+================================== FAILURES ===================================
+______________ test_rope_custom_positions_and_gradients[1-True] _______________
+
+rotate = True, heads = 1
+
+    @pytest.mark.parametrize("rotate", [True, False])
+    @pytest.mark.parametrize("heads", [1, 3])
+    def test_rope_custom_positions_and_gradients(rotate, heads):
+        torch.manual_seed(43)
+        dim, batch, seq = 8, 2, 4
+        dst = torch.tensor([0, 1, 2, 4, 5])
+        positions = torch.tensor([3, 1, 0, 2, 1])
+        cos, sin = torch.randn(seq, dim), torch.randn(seq, dim)
+        b = torch.randn(5, heads * dim).half().requires_grad_()
+        l = torch.randn_like(b).requires_grad_()
+        b2, l2 = b.detach().clone().requires_grad_(), l.detach().clone().requires_grad_()
+>       out = rope_lora_scatter(b, l, cos, sin, positions, dst, batch, seq, heads, rotate)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+reports\test_cpu_validation.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+solution\triton_ops.py:396: in rope_lora_scatter
+    return RopeLoraScatterFunction.apply(base16, lora16, cos, sin, cos_row, dst, batch, seq,
+..\.soup-audit-venv\Lib\site-packages\torch\autograd\function.py:576: in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+ctx = <torch.autograd.function.RopeLoraScatterFunctionBackward object at 0x0000019D52DE3680>
+base = tensor([[ 1.6719, -0.3596, -2.1504, -1.3594, -0.7202, -0.5679, -0.5439,  1.8496],
+        [-0.0085, -0.4165,  0.4744, ....4319, -1.4688,  0.4478, -0.7222,  0.1407,  0.8501,  0.6577, -0.2754]],
+       dtype=torch.float16, requires_grad=True)
+lora = tensor([[ 0.0351, -0.6025,  1.7354,  0.9004,  0.6514,  1.8564, -2.4863,  1.3320],
+        [-2.4785,  1.0166, -1.1182, ....8477,  0.5205, -1.1074, -0.1335, -0.2186, -1.5684, -0.2457, -0.2067]],
+       dtype=torch.float16, requires_grad=True)
+cos = tensor([[-0.0166, -0.4668,  2.0909,  0.6149, -0.5621, -0.4143, -1.3001, -0.1012],
+        [-1.0999, -0.4687, -0.8400, ... 0.3083, -0.2947, -0.7662, -0.9962],
+        [ 0.7781, -0.6856, -0.7326,  0.3004, -0.3630,  1.5822, -0.4430,  1.8462]])
+sin = tensor([[-0.7115,  1.0425, -0.7618, -0.4830, -0.7771, -0.4484, -1.1668,  0.5006],
+        [ 1.3251, -1.1627, -2.1186, ...-0.1955,  0.7438,  1.3611,  0.7930],
+        [ 0.4777,  0.9248,  0.8841,  0.7809,  0.4664, -2.2619,  0.5374, -0.8002]])
+cos_row = tensor([3, 1, 0, 2, 1]), dst = tensor([0, 1, 2, 4, 5]), batch = 2
+seq = 4, n_heads = 1, rotate = True, block_heads = 1
+
+    @staticmethod
+    def forward(ctx, base, lora, cos, sin, cos_row, dst, batch, seq, n_heads, rotate,
+                block_heads):
+        n_tok = base.shape[0]
+        head_dim = cos.shape[-1]
+        cos2 = cos.reshape(-1, head_dim).contiguous()
+        sin2 = sin.reshape(-1, head_dim).contiguous()
+        full = n_tok == batch * seq
+        out = (torch.empty if full else torch.zeros)(
+            (batch, n_heads, seq, head_dim), dtype=torch.float32, device=base.device)
+        # One BLOCK_HEADS for q and k/v (the larger head count): one compiled kernel, not two.
+        block_heads = max(int(block_heads or 0), _next_pow2(n_heads))
+        if _kernels_ok(base) and n_tok:
+            _rope_lora_scatter_fwd_kernel[(n_tok,)](
+                base, lora if lora is not None else base, cos2, sin2, cos_row, dst, out,
+                seq, n_heads, int(lora is not None), int(rotate),
+                HEAD_DIM=head_dim, BLOCK_HEADS=block_heads, num_warps=ROPE_WARPS,
+                enable_fp_fusion=False)
+        elif n_tok:
+            x = base.float() + (lora.float() if lora is not None else 0.0)
+            x = x.view(n_tok, n_heads, head_dim)
+            if rotate:
+                c = cos2.index_select(0, cos_row)[:, None, :]
+                s = sin2.index_select(0, cos_row)[:, None, :]
+                half = head_dim // 2
+                rot = torch.cat((-x[..., half:], x[..., :half]), dim=-1)
+                x = x * c + rot * s
+            flat = out.permute(0, 2, 1, 3).reshape(batch * seq, n_heads, head_dim)
+            flat.index_copy_(0, dst, x)
+>           out.copy_(flat.view(batch, seq, n_heads, head_dim).permute(0, 2, 1, 3))
+E           RuntimeError: unsupported operation: some elements of the input tensor and the written-to tensor refer to a single memory location. Please clone() the tensor before performing the operation.
+
+solution\triton_ops.py:365: RuntimeError
+______________ test_rope_custom_positions_and_gradients[1-False] ______________
+
+rotate = False, heads = 1
+
+    @pytest.mark.parametrize("rotate", [True, False])
+    @pytest.mark.parametrize("heads", [1, 3])
+    def test_rope_custom_positions_and_gradients(rotate, heads):
+        torch.manual_seed(43)
+        dim, batch, seq = 8, 2, 4
+        dst = torch.tensor([0, 1, 2, 4, 5])
+        positions = torch.tensor([3, 1, 0, 2, 1])
+        cos, sin = torch.randn(seq, dim), torch.randn(seq, dim)
+        b = torch.randn(5, heads * dim).half().requires_grad_()
+        l = torch.randn_like(b).requires_grad_()
+        b2, l2 = b.detach().clone().requires_grad_(), l.detach().clone().requires_grad_()
+>       out = rope_lora_scatter(b, l, cos, sin, positions, dst, batch, seq, heads, rotate)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+reports\test_cpu_validation.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+solution\triton_ops.py:396: in rope_lora_scatter
+    return RopeLoraScatterFunction.apply(base16, lora16, cos, sin, cos_row, dst, batch, seq,
+..\.soup-audit-venv\Lib\site-packages\torch\autograd\function.py:576: in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+ctx = <torch.autograd.function.RopeLoraScatterFunctionBackward object at 0x0000019D52DE39B0>
+base = tensor([[ 1.6719, -0.3596, -2.1504, -1.3594, -0.7202, -0.5679, -0.5439,  1.8496],
+        [-0.0085, -0.4165,  0.4744, ....4319, -1.4688,  0.4478, -0.7222,  0.1407,  0.8501,  0.6577, -0.2754]],
+       dtype=torch.float16, requires_grad=True)
+lora = tensor([[ 0.0351, -0.6025,  1.7354,  0.9004,  0.6514,  1.8564, -2.4863,  1.3320],
+        [-2.4785,  1.0166, -1.1182, ....8477,  0.5205, -1.1074, -0.1335, -0.2186, -1.5684, -0.2457, -0.2067]],
+       dtype=torch.float16, requires_grad=True)
+cos = tensor([[-0.0166, -0.4668,  2.0909,  0.6149, -0.5621, -0.4143, -1.3001, -0.1012],
+        [-1.0999, -0.4687, -0.8400, ... 0.3083, -0.2947, -0.7662, -0.9962],
+        [ 0.7781, -0.6856, -0.7326,  0.3004, -0.3630,  1.5822, -0.4430,  1.8462]])
+sin = tensor([[-0.7115,  1.0425, -0.7618, -0.4830, -0.7771, -0.4484, -1.1668,  0.5006],
+        [ 1.3251, -1.1627, -2.1186, ...-0.1955,  0.7438,  1.3611,  0.7930],
+        [ 0.4777,  0.9248,  0.8841,  0.7809,  0.4664, -2.2619,  0.5374, -0.8002]])
+cos_row = tensor([3, 1, 0, 2, 1]), dst = tensor([0, 1, 2, 4, 5]), batch = 2
+seq = 4, n_heads = 1, rotate = False, block_heads = 1
+
+    @staticmethod
+    def forward(ctx, base, lora, cos, sin, cos_row, dst, batch, seq, n_heads, rotate,
+                block_heads):
+        n_tok = base.shape[0]
+        head_dim = cos.shape[-1]
+        cos2 = cos.reshape(-1, head_dim).contiguous()
+        sin2 = sin.reshape(-1, head_dim).contiguous()
+        full = n_tok == batch * seq
+        out = (torch.empty if full else torch.zeros)(
+            (batch, n_heads, seq, head_dim), dtype=torch.float32, device=base.device)
+        # One BLOCK_HEADS for q and k/v (the larger head count): one compiled kernel, not two.
+        block_heads = max(int(block_heads or 0), _next_pow2(n_heads))
+        if _kernels_ok(base) and n_tok:
+            _rope_lora_scatter_fwd_kernel[(n_tok,)](
+                base, lora if lora is not None else base, cos2, sin2, cos_row, dst, out,
+                seq, n_heads, int(lora is not None), int(rotate),
+                HEAD_DIM=head_dim, BLOCK_HEADS=block_heads, num_warps=ROPE_WARPS,
+                enable_fp_fusion=False)
+        elif n_tok:
+            x = base.float() + (lora.float() if lora is not None else 0.0)
+            x = x.view(n_tok, n_heads, head_dim)
+            if rotate:
+                c = cos2.index_select(0, cos_row)[:, None, :]
+                s = sin2.index_select(0, cos_row)[:, None, :]
+                half = head_dim // 2
+                rot = torch.cat((-x[..., half:], x[..., :half]), dim=-1)
+                x = x * c + rot * s
+            flat = out.permute(0, 2, 1, 3).reshape(batch * seq, n_heads, head_dim)
+            flat.index_copy_(0, dst, x)
+>           out.copy_(flat.view(batch, seq, n_heads, head_dim).permute(0, 2, 1, 3))
+E           RuntimeError: unsupported operation: some elements of the input tensor and the written-to tensor refer to a single memory location. Please clone() the tensor before performing the operation.
+
+solution\triton_ops.py:365: RuntimeError
+____________________ test_benchmark_rejects_unequal_curves ____________________
+
+    def test_benchmark_rejects_unequal_curves():
+        from benchmarks.verify_t4_speedup import _compare_curves
+        entry = dict(loss=1., entropy=2., mean_token_accuracy=.5, num_tokens=10)
+>       assert _compare_curves({"logs": [entry, entry]}, {"logs": [entry]})
+E       AssertionError: assert []
+E        +  where [] = <function _compare_curves at 0x0000019D558B42C0>({'logs': [{'loss': 1.0, 'entropy': 2.0, 'mean_token_accuracy': 0.5, 'num_tokens': 10}, {'loss': 1.0, 'entropy': 2.0, 'mean_token_accuracy': 0.5, 'num_tokens': 10}]}, {'logs': [{'loss': 1.0, 'entropy': 2.0, 'mean_token_accuracy': 0.5, 'num_tokens': 10}]})
+
+reports\test_cpu_validation.py:114: AssertionError
+---------------------------- Captured stdout call -----------------------------
+  loss                 mean relative gap  0.000%  first step  0.000%
+  entropy              mean relative gap  0.000%  first step  0.000%
+  mean_token_accuracy  mean relative gap  0.000%  first step  0.000%
+____________ test_fallback_restores_rng_after_failed_fast_forward _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000019D54E76690>
+
+    def test_fallback_restores_rng_after_failed_fast_forward(monkeypatch):
+        from solution import patch_model as pm
+        # Fault injection only: verify that a failure after real dropout consumption is transactional.
+        def fail(*args):
+            torch.nn.functional.dropout(torch.ones(20), p=.5, training=True)
+            raise RuntimeError("injected late kernel failure")
+        def original(*args, **kwargs):
+            return torch.nn.functional.dropout(torch.ones(20), p=.5, training=True)
+        monkeypatch.setattr(pm, "_step_reason", lambda *a: None)
+        monkeypatch.setattr(pm, "_fast_forward", fail)
+        monkeypatch.setattr(pm, "_REQUEST", pm._StepRequest(None))
+        monkeypatch.setitem(pm._ORIGINALS, "forward", original)
+        torch.manual_seed(45)
+        expected = original()
+        expected_state = torch.get_rng_state()
+        torch.manual_seed(45)
+        got = pm._patched_causal_lm_forward(SimpleNamespace(), input_ids=torch.ones(1, 4).long())
+>       torch.testing.assert_close(got, expected, atol=0, rtol=0)
+E       AssertionError: Tensor-likes are not equal!
+E       
+E       Mismatched elements: 12 / 20 (60.0%)
+E       Greatest absolute difference: 2.0 at index (0,)
+E       Greatest relative difference: inf at index (15,)
+
+reports\test_cpu_validation.py:134: AssertionError
+---------------------------- Captured stderr call -----------------------------
+[solution] fast path off: RuntimeError('injected late kernel failure')
+=========================== short test summary info ===========================
+FAILED reports/test_cpu_validation.py::test_rope_custom_positions_and_gradients[1-True]
+FAILED reports/test_cpu_validation.py::test_rope_custom_positions_and_gradients[1-False]
+FAILED reports/test_cpu_validation.py::test_benchmark_rejects_unequal_curves
+FAILED reports/test_cpu_validation.py::test_fallback_restores_rng_after_failed_fast_forward
+4 failed, 27 passed, 8 deselected in 13.74s

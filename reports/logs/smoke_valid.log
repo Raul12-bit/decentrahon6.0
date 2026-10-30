@@ -1,0 +1,70 @@
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 127.96it/s]
+smoke_train {"command": ["C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe", "-c", "import solution; solution.apply(); from soup_cli.cli import run; run()", "train", "--config", "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml", "--yes"], "exit_code": 0, "wall_seconds": 19.00069839999196}
+smoke_resume {"command": ["C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe", "-c", "import solution; solution.apply(); from soup_cli.cli import run; run()", "train", "--config", "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml", "--yes", "--resume", "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\adapter\\checkpoint-2"], "exit_code": 0, "wall_seconds": 18.866157600001316}
+smoke_bad_checkpoint {"command": ["C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe", "-c", "import solution; solution.apply(); from soup_cli.cli import run; run()", "train", "--config", "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml", "--yes", "--resume", "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\missing"], "exit_code": 1, "wall_seconds": 2.0567708000016864}
+{
+  "scope": "CPU tiny Qwen2 + LoRA; solution fallback; NOT the fixed challenge",
+  "model_setup_s": 0.10052020000875928,
+  "torch": "2.8.0+cpu",
+  "train": {
+    "command": [
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe",
+      "-c",
+      "import solution; solution.apply(); from soup_cli.cli import run; run()",
+      "train",
+      "--config",
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml",
+      "--yes"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 19.00069839999196
+  },
+  "losses": [
+    2.8646254539489746,
+    2.8646254539489746,
+    2.8555238246917725,
+    2.8461456298828125
+  ],
+  "grad_norms": [
+    1.3449320793151855,
+    1.3001646995544434,
+    1.3404369354248047,
+    1.4725598096847534
+  ],
+  "global_step": 4,
+  "resume": {
+    "command": [
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe",
+      "-c",
+      "import solution; solution.apply(); from soup_cli.cli import run; run()",
+      "train",
+      "--config",
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml",
+      "--yes",
+      "--resume",
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\adapter\\checkpoint-2"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 18.866157600001316
+  },
+  "resume_adapter_bit_equal": true,
+  "adapter_tensors": 8,
+  "invalid_checkpoint": {
+    "command": [
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe",
+      "-c",
+      "import solution; solution.apply(); from soup_cli.cli import run; run()",
+      "train",
+      "--config",
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml",
+      "--yes",
+      "--resume",
+      "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\missing"
+    ],
+    "exit_code": 1,
+    "wall_seconds": 2.0567708000016864
+  },
+  "rewind_exists": true
+}

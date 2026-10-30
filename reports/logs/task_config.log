@@ -1,0 +1,1 @@
+{'base': 'Qwen/Qwen2.5-1.5B-Instruct', 'task': 'sft', 'batch': 4, 'max_length': 512, 'quantization': '4bit', 'gradient_checkpointing': False, 'stream_layers': False, 'packing': False, 'multipack': False}

@@ -1,0 +1,57 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\.soup-audit-venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0
+plugins: anyio-4.15.1
+collecting ... collected 47 items
+
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[1.0-dtype0-1-11-1] PASSED [  2%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[1.0-dtype0-17-67-4] PASSED [  4%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[1.0-dtype0-7-2053-3] PASSED [  6%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[1.0-dtype1-1-11-1] PASSED [  8%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[1.0-dtype1-17-67-4] PASSED [ 10%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[1.0-dtype1-7-2053-3] PASSED [ 12%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[128.0-dtype0-1-11-1] PASSED [ 14%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[128.0-dtype0-17-67-4] PASSED [ 17%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[128.0-dtype0-7-2053-3] PASSED [ 19%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[128.0-dtype1-1-11-1] PASSED [ 21%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[128.0-dtype1-17-67-4] PASSED [ 23%]
+reports/test_cpu_validation.py::test_ce_loss_statistics_and_gradient[128.0-dtype1-7-2053-3] PASSED [ 25%]
+reports/test_cpu_validation.py::test_ce_no_label_has_zero_gradient[0] PASSED [ 27%]
+reports/test_cpu_validation.py::test_ce_no_label_has_zero_gradient[1] PASSED [ 29%]
+reports/test_cpu_validation.py::test_ce_no_label_has_zero_gradient[7] PASSED [ 31%]
+reports/test_cpu_validation.py::test_norm_output_and_input_gradients[shape0-True] PASSED [ 34%]
+reports/test_cpu_validation.py::test_norm_output_and_input_gradients[shape0-False] PASSED [ 36%]
+reports/test_cpu_validation.py::test_norm_output_and_input_gradients[shape1-True] PASSED [ 38%]
+reports/test_cpu_validation.py::test_norm_output_and_input_gradients[shape1-False] PASSED [ 40%]
+reports/test_cpu_validation.py::test_norm_output_and_input_gradients[shape2-True] PASSED [ 42%]
+reports/test_cpu_validation.py::test_norm_output_and_input_gradients[shape2-False] PASSED [ 44%]
+reports/test_cpu_validation.py::test_rope_custom_positions_and_gradients[1-True] PASSED [ 46%]
+reports/test_cpu_validation.py::test_rope_custom_positions_and_gradients[1-False] PASSED [ 48%]
+reports/test_cpu_validation.py::test_rope_custom_positions_and_gradients[3-True] PASSED [ 51%]
+reports/test_cpu_validation.py::test_rope_custom_positions_and_gradients[3-False] PASSED [ 53%]
+reports/test_cpu_validation.py::test_swiglu_forward_backward[shape0] PASSED [ 55%]
+reports/test_cpu_validation.py::test_swiglu_forward_backward[shape1] PASSED [ 57%]
+reports/test_cpu_validation.py::test_swiglu_forward_backward[shape2] PASSED [ 59%]
+reports/test_cpu_validation.py::test_apply_without_triton_is_idempotent PASSED [ 61%]
+reports/test_cpu_validation.py::test_benchmark_rejects_unequal_curves PASSED [ 63%]
+reports/test_cpu_validation.py::test_benchmark_rejects_invalid_metrics[None] PASSED [ 65%]
+reports/test_cpu_validation.py::test_benchmark_rejects_invalid_metrics[nan] PASSED [ 68%]
+reports/test_cpu_validation.py::test_benchmark_rejects_invalid_metrics[inf] PASSED [ 70%]
+reports/test_cpu_validation.py::test_benchmark_rejects_empty_curves PASSED [ 72%]
+reports/test_cpu_validation.py::test_ce_rejects_out_of_range_labels[-1] PASSED [ 74%]
+reports/test_cpu_validation.py::test_ce_rejects_out_of_range_labels[11] PASSED [ 76%]
+reports/test_cpu_validation.py::test_ce_rejects_nonpositive_chunk[-1] PASSED [ 78%]
+reports/test_cpu_validation.py::test_ce_rejects_nonpositive_chunk[0] PASSED [ 80%]
+reports/test_cpu_validation.py::test_fallback_restores_rng_after_failed_fast_forward PASSED [ 82%]
+reports/test_cpu_validation.py::test_fallback_disables_failed_path_for_later_calls PASSED [ 85%]
+reports/test_cpu_validation.py::test_manual_prepare_does_not_mutate_unsupported_model[True] PASSED [ 87%]
+reports/test_cpu_validation.py::test_manual_prepare_does_not_mutate_unsupported_model[False] PASSED [ 89%]
+reports/test_cpu_validation.py::test_block_document_mask_prevents_cross_document_influence PASSED [ 91%]
+reports/test_cpu_validation.py::test_bad_document_boundaries_are_rejected[boundaries0] PASSED [ 93%]
+reports/test_cpu_validation.py::test_bad_document_boundaries_are_rejected[boundaries1] PASSED [ 95%]
+reports/test_cpu_validation.py::test_bad_document_boundaries_are_rejected[boundaries2] PASSED [ 97%]
+reports/test_cpu_validation.py::test_bad_document_boundaries_are_rejected[boundaries3] PASSED [100%]
+
+- generated xml file: C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\logs\cpu_full.xml -
+============================= 47 passed in 20.18s =============================

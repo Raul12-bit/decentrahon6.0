@@ -1,0 +1,12 @@
+{
+  "name": "missing_config",
+  "command": [
+    "../.soup-audit-venv/Scripts/soup.exe",
+    "train",
+    "--config",
+    "reports/artifacts/missing.yaml",
+    "--yes"
+  ],
+  "exit_code": 1,
+  "wall_seconds": 2.1220714000082808
+}

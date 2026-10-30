@@ -1,0 +1,22 @@
+{
+  "name": "install_dependencies",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pip",
+    "install",
+    "soup-cli[train]==0.77.0",
+    "transformers==5.16.1",
+    "peft==0.20.0",
+    "trl==0.29.1",
+    "bitsandbytes==0.50.2",
+    "accelerate==1.14.0",
+    "torch==2.8.0",
+    "pytest",
+    "ruff",
+    "mypy",
+    "--disable-pip-version-check"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 384.7444712999859
+}

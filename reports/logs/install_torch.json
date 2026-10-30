@@ -1,0 +1,15 @@
+{
+  "name": "install_torch",
+  "command": [
+    "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe",
+    "-m",
+    "pip",
+    "install",
+    "torch==2.8.0",
+    "--index-url",
+    "https://download.pytorch.org/whl/cpu",
+    "--disable-pip-version-check"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 238.5877285000024
+}

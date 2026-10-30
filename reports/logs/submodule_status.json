@@ -1,0 +1,10 @@
+{
+  "name": "submodule_status",
+  "command": [
+    "git",
+    "submodule",
+    "status"
+  ],
+  "exit_code": 128,
+  "wall_seconds": 2.276738100001239
+}

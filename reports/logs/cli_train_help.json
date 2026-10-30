@@ -1,0 +1,10 @@
+{
+  "name": "cli_train_help",
+  "command": [
+    "../.soup-audit-venv/Scripts/soup.exe",
+    "train",
+    "--help"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 3.0828134000039427
+}

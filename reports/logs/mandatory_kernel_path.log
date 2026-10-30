@@ -1,0 +1,10 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\.soup-audit-venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0
+plugins: anyio-4.15.1
+collecting ... collected 0 items
+
+============================ no tests ran in 0.03s ============================
+ERROR: file or directory not found: tests/test_triton_kernels.py
+

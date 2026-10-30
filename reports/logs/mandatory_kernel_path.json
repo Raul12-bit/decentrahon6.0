@@ -1,0 +1,12 @@
+{
+  "name": "mandatory_kernel_path",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "tests/test_triton_kernels.py",
+    "-v"
+  ],
+  "exit_code": 4,
+  "wall_seconds": 3.371757000000798
+}

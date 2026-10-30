@@ -1,0 +1,43 @@
+{
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "python_files_compiled": 27,
+  "syntax_errors": [],
+  "source_kernel_candidates": {
+    "_cross_entropy_fwd_bwd_inplace_kernel": "solution\\triton_cross_entropy.py",
+    "_nf4_dequant_nested_kernel": "solution\\triton_nf4_lora.py",
+    "_add_rmsnorm_fwd_kernel": "solution\\triton_ops.py",
+    "_add_rmsnorm_bwd_kernel": "solution\\triton_ops.py",
+    "_rope_lora_scatter_fwd_kernel": "solution\\triton_ops.py",
+    "_rope_gather_bwd_kernel": "solution\\triton_ops.py",
+    "_swiglu_fp16_fwd_kernel": "solution\\triton_ops.py",
+    "_swiglu_fp16_bwd_inplace_kernel": "solution\\triton_ops.py"
+  },
+  "example_kernels": [
+    "example_swiglu_fwd_kernel",
+    "example_swiglu_bwd_kernel"
+  ],
+  "lookalikes": [
+    "_swiglu_fp16_fwd_kernel (0.82)"
+  ],
+  "banned_imports": [],
+  "broken_sources": [],
+  "git_head": "601abd6ed455b748e4d2a2cfbd3abfaff86f8f7a",
+  "protected_sha256": {
+    "task\\prepare_data.py": "ba9e5df102f421d75b0a5b31592fcd551424bb767d92807cd63bb4e9315cce7e",
+    "task\\task.yaml": "f9ee01ac910f493549cd0552eddf500df8008a5a392bfb1991a170932f2083f1",
+    "harness\\check_rules.py": "804ad852922014dcafecad764a481745b09b75beada7955b58800b0d8770c8fb",
+    "harness\\common.py": "13a3cd3f11bc79f473ce07b456247b100e6a463986007cfc59ec3bac6d653793",
+    "harness\\eval_adapter.py": "5e2e8c9b6bcb3506ab6b8a554343d9cd68a77cda8da7f4b98f43e1591d408983",
+    "harness\\example_reference.py": "649212bbfc863d75b40601bf2e4f685cf8f3c0ec1e3faecf7c573de5e3ec0688",
+    "harness\\run_task.py": "b163ce21d85daac0f08bc2fcbf0c35928a7b13e6b5d10bd1d18c61a14a6880bf",
+    "harness\\score.py": "368772b023dd7df12c6550e2faa2d9947a0ccb53b2798ce83c7c27083614610a",
+    "harness\\_train.py": "1b04cb7f8d17af2edf553fc90eb61d571e11e2dc0aba7dd8873a43efcbc52152",
+    "tests\\conftest.py": "7a3bd62d757d71c2940edf8f3be168c30baccd98948eaaaa183f2e94aae1e0d7",
+    "tests\\test_callback.py": "18592316abbf9b51b65b0d76c1748c6783c0583d632d7fd41529737d07e2cebb",
+    "tests\\test_config.py": "dabc14fec257a80b9604c518fadb065c83241847875b70fac190eac9e5f26e95",
+    "tests\\test_formats.py": "6abcee9ea08b5a0fd5bcf9ea0eeae65dacefa5ec4cd9798fc46566ff38c49752",
+    "tests\\test_loader.py": "4b0ed5eb162cab4042c907198b3ff99ed3da56e39a78d6b44f27707f32dfb12d",
+    "tests\\test_trainer_init.py": "3246b10cf9901717e64691855073de00a5ed5f8182a10ae055cb1fdbe05505db"
+  }
+}

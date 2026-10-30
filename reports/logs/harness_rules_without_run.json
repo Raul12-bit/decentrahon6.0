@@ -1,0 +1,9 @@
+{
+  "name": "harness_rules_without_run",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "harness/check_rules.py"
+  ],
+  "exit_code": 1,
+  "wall_seconds": 0.7022766000009142
+}

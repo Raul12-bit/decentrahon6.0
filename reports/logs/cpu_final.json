@@ -1,0 +1,13 @@
+{
+  "name": "cpu_final",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "reports/test_cpu_validation.py",
+    "-v",
+    "--junitxml=reports/logs/cpu_final.xml"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 13.778408400001354
+}

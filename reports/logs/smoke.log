@@ -1,0 +1,12 @@
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 60.27it/s]
+smoke_train {"command": ["C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\.soup-audit-venv\\Scripts\\python.exe", "-c", "import solution; solution.apply(); from soup_cli.cli import run; run()", "train", "--config", "C:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\cpu_smoke\\soup.yaml", "--yes"], "exit_code": 1, "wall_seconds": 1.6722246999997878}
+Traceback (most recent call last):
+  File "C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\smoke_train.py", line 77, in <module>
+    results["train"] = run("smoke_train")
+                       ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\smoke_train.py", line 72, in run
+    assert p.returncode == expected, (name, (p.stdout + p.stderr)[-5000:])
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('smoke_train', 'Loading config from \nC:\\Users\\prog1\\OneDrive\\Desktop\\Haclathon6.0\\decentrahon6.0\\reports\\artifacts\\c\npu_smoke\\soup.yaml...\nConfig validation error:\n\n  data -> max_length: Input should be greater than or equal to 64\n[solution] Triton is not importable: running plain Soup\n')

@@ -1,0 +1,20 @@
+{
+  "name": "lint_errors",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "ruff",
+    "check",
+    "--isolated",
+    "--select",
+    "F,E9",
+    "solution",
+    "benchmarks",
+    "harness",
+    "task",
+    "tests",
+    "reports"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 0.7561411999922711
+}

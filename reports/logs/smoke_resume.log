@@ -1,0 +1,96 @@
+Loading config from 
+C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifacts\c
+pu_smoke\soup.yaml...
+Resuming from: 
+C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifacts\c
+pu_smoke\adapter\checkpoint-2
+┌────────────────────────────── Training Setup ───────────────────────────────┐
+│ Device:  CPU (no GPU detected)                                              │
+│ Memory:  N/A (CPU mode)                                                     │
+│ Model:                                                                      │
+│ C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifac │
+│ ts\cpu_smoke\tiny_qwen2                                                     │
+│ Task:    sft                                                                │
+│ Backend: transformers                                                       │
+│ LoRA:    r=4, alpha=8                                                       │
+│ Quant:   none                                                               │
+│ Seed:    2026                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+Loading dataset...
+Loaded: 8 train samples
+Run ID: run_20261030_164419_e448ba6d
+Setting up model + trainer...
+Loading tokenizer: 
+C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifacts\c
+pu_smoke\tiny_qwen2
+Loading model: 
+C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifacts\c
+pu_smoke\tiny_qwen2
+LoRA applied: 896 trainable / 20,128 total (4.45%)
+Rewind log: 
+C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifacts\c
+pu_smoke\adapter\rewind.jsonl
+Base revision: unknown (existing loading behavior preserved)
+Training started!
+
+Rewind recorder disabled: resumed runs skip batches the recorder cannot see; 
+start a fresh run to record
+{'loss': '2.856', 'grad_norm': '1.34', 'learning_rate': '0.00075', 'entropy': '2.761', 'num_tokens': '6', 'mean_token_accuracy': '0', 'epoch': '0.75'}
+{'loss': '2.846', 'grad_norm': '1.473', 'learning_rate': '0.00025', 'entropy': '2.761', 'num_tokens': '12', 'mean_token_accuracy': '0', 'epoch': '1'}
+{'train_runtime': '0.1612', 'train_samples_per_second': '49.64', 'train_steps_per_second': '24.82', 'train_loss': '1.425', 'epoch': '1'}
+┌─ Soup Training: C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0─┐
+│ Epoch 1.0/1   100%                                                          │
+│ Step:  4/4                                                                  │
+│ Loss:  2.8461    LR: 2.50e-04                                               │
+│ Speed: 24.82 it/s                                                           │
+│ Grad:  1.4726                                                               │
+└─────────────────────────── CPU (no GPU detected) ───────────────────────────┘┌──────────────────────────── Training Complete! ─────────────────────────────┐
+│ Loss: 2.8646 -> 2.8461                                                      │
+│ Duration: 0m                                                                │
+│ Output:                                                                     │
+│ C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifac │
+│ ts\cpu_smoke\adapter                                                        │
+│ Run ID: run_20261030_164419_e448ba6d                                        │
+│                                                                             │
+│ Quick test:  soup chat --model                                              │
+│ C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifac │
+│ ts\cpu_smoke\adapter                                                        │
+│ Push to HF:  soup push --model                                              │
+│ C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifac │
+│ ts\cpu_smoke\adapter                                                        │
+│ Merge LoRA:  soup merge --adapter                                           │
+│ C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifac │
+│ ts\cpu_smoke\adapter                                                        │
+│ Export GGUF: soup export --model                                            │
+│ C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\decentrahon6.0\reports\artifac │
+│ ts\cpu_smoke\adapter                                                        │
+│ Run details: soup runs show run_20261030_164419_e448ba6d                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+[solution] Triton is not importable: running plain Soup
+
+Loading weights:   0%|          | 0/26 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 26/26 [00:00<?, ?it/s]
+
+Map:   0%|          | 0/8 [00:00<?, ? examples/s][transformers] return_assistant_tokens_mask==True but chat template does not contain `{% generation %}` keyword.
+
+Map: 100%|██████████| 8/8 [00:00<00:00, 1481.63 examples/s]
+
+Map:   0%|          | 0/8 [00:00<?, ? examples/s]
+Map: 100%|██████████| 8/8 [00:00<?, ? examples/s]
+
+Truncating train dataset:   0%|          | 0/8 [00:00<?, ? examples/s]
+Truncating train dataset: 100%|██████████| 8/8 [00:00<?, ? examples/s]
+
+  0%|          | 0/4 [00:00<?, ?it/s]C:\Users\prog1\OneDrive\Desktop\Haclathon6.0\.soup-audit-venv\Lib\site-packages\torch\utils\data\dataloader.py:666: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+
+                                     
+
+ 75%|███████▌  | 3/4 [00:00<00:00, 54.22it/s]
+                                             
+
+100%|██████████| 4/4 [00:00<00:00, 50.84it/s]
+                                             
+
+100%|██████████| 4/4 [00:00<00:00, 24.82it/s]
+100%|██████████| 4/4 [00:00<00:00, 23.87it/s]

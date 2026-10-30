@@ -1,0 +1,14 @@
+{
+  "name": "cpu_after_first_fixes",
+  "command": [
+    "../.soup-audit-venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "reports/test_cpu_validation.py",
+    "-q",
+    "-k",
+    "benchmark or fallback or ce_ or norm_ or rope_ or swiglu"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 9.263186299998779
+}

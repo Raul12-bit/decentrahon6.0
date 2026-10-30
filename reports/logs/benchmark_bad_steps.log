@@ -1,0 +1,3 @@
+usage: verify_t4_speedup.py [-h] [--steps STEPS] [--train-file TRAIN_FILE]
+                            [--seed SEED] [--out OUT] [--timeout TIMEOUT]
+verify_t4_speedup.py: error: --steps must be at least 3 (two warmup steps and one timed step)

@@ -40,7 +40,7 @@ if triton is not None:
         resid_ptr,  # *f32 [N, H]  residual stream before the add
         delta_ptr,  # *f16 [N, H]  block output to add (ignored if has_delta == 0)
         resid_out_ptr,  # *f32 [N, H] resid + delta (written if has_delta)
-        y_ptr,  # *f32 [N, H]  normalized output
+        y_ptr,  # *f32 or *f16 [N, H] normalized output, rounded once to y's dtype
         weight_ptr,  # *f32 [H]
         rstd_ptr,  # *f32 [N]
         n_cols,
@@ -60,7 +60,7 @@ if triton is not None:
         rstd = 1.0 / tl.sqrt(var + eps)
         w = tl.load(weight_ptr + cols, mask=mask, other=0.0).to(tl.float32)
         y = w * (x * rstd)
-        tl.store(y_ptr + row * n_cols + cols, y, mask=mask)
+        tl.store(y_ptr + row * n_cols + cols, y.to(y_ptr.dtype.element_ty), mask=mask)
         tl.store(rstd_ptr + row, rstd)
 
     @triton.jit(do_not_specialize=["has_dres", "has_delta"])
@@ -99,9 +99,12 @@ def _kernels_ok(*tensors: torch.Tensor) -> bool:
 
 
 def _norm_fwd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
-              eps: float):
+              eps: float, out_dtype: torch.dtype = torch.float32):
+    """(resid + delta, out_dtype(RMSNorm(resid + delta)), rstd). With out_dtype fp16 the
+    normalized row is computed in fp32 and rounded once: the value base gets from casting its
+    fp32 norm output to fp16 for the next GEMM."""
     n_rows, n_cols = resid.shape
-    y = torch.empty_like(resid, dtype=torch.float32)
+    y = torch.empty_like(resid, dtype=out_dtype)
     rstd = torch.empty(n_rows, dtype=torch.float32, device=resid.device)
     resid_out = torch.empty_like(resid) if delta is not None else resid
     if _kernels_ok(resid):
@@ -115,7 +118,7 @@ def _norm_fwd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.
     if delta is not None:
         resid_out.copy_(x)
     rstd.copy_(torch.rsqrt(x.pow(2).mean(-1) + eps))
-    y.copy_(weight * (x * rstd[:, None]))
+    y.copy_((weight * (x * rstd[:, None])).to(out_dtype))
     return resid_out, y, rstd
 
 

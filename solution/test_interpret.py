@@ -159,10 +159,10 @@ def test_cross_entropy_argmax_ties_take_the_first_column():
     assert hits.tolist() == [0, 1, 1]
 
 
-def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu():
-    """The whole patched training forward + backward (every kernel above, wired by
-    patches/patch_qwen.py) against base transformers + peft + bitsandbytes, on a padded batch
-    with LoRA dropout: same loss, entropy, dropout RNG stream and LoRA gradients."""
+@pytest.fixture(scope="module")
+def tiny_qlora_qwen2():
+    """A 2-layer 4-bit NF4 (double-quant) Qwen2 with LoRA r=8 on q/v, dropout 0.05, prepared
+    as Soup prepares the real one, with the solution's patches applied."""
     bnb = pytest.importorskip("bitsandbytes")
     pytest.importorskip("peft")
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -172,6 +172,7 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu():
     from solution.kernels.nf4 import nf4_eligible
     from solution.patches import patch_qwen as pm
 
+    torch.manual_seed(0)
     cfg = Qwen2Config(vocab_size=1000, hidden_size=256, intermediate_size=640,
                       num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2,
                       max_position_embeddings=256, tie_word_embeddings=True)
@@ -204,12 +205,49 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu():
     solution.apply()
     assert nf4_eligible(model.base_model.model.model.layers[0].mlp.gate_proj)
     assert solution.apply_t4_triton_patches(model)["fast_path"]
+    yield model, cfg.vocab_size
+    pm.restore_t4_triton_patches(model)
 
+
+@pytest.mark.parametrize("pads,varlen,fused_mlp", [
+    ("right", True, True),     # the defaults on a padded batch: per-row attention, fused MLP
+    ("right", False, True),    # padded attention with base's 4-D mask
+    ("right", True, False),    # separate post-attention norm + MLP
+    ("none", True, True),      # no pads: the batch layout, base's mask (None)
+])
+def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu(tiny_qlora_qwen2, monkeypatch, pads,
+                                                       varlen, fused_mlp):
+    """The whole patched training forward + backward (every kernel above, wired by
+    patches/patch_qwen.py) against base transformers + peft + bitsandbytes with LoRA dropout:
+    same loss, entropy, dropout RNG stream and LoRA gradients, on each code path."""
+    from solution import _runtime
+    from solution.patches import patch_qwen as pm
+
+    model, vocab = tiny_qlora_qwen2
+    monkeypatch.setattr(_runtime, "VARLEN_ATTN", varlen)
+    monkeypatch.setattr(_runtime, "FUSED_MLP_NORM", fused_mlp)
+    taken = {"varlen": 0, "fused_mlp": 0}
+    real_varlen, real_post = pm._varlen_attention, pm.add_norm_gate_up_swiglu
+
+    def count_varlen(*args, **kwargs):
+        taken["varlen"] += 1
+        return real_varlen(*args, **kwargs)
+
+    def count_post(*args, **kwargs):
+        taken["fused_mlp"] += 1
+        return real_post(*args, **kwargs)
+
+    monkeypatch.setattr(pm, "_varlen_attention", count_varlen)
+    monkeypatch.setattr(pm, "add_norm_gate_up_swiglu", count_post)
+
+    torch.manual_seed(7)
     batch, seq = 4, 40
-    ids = torch.randint(0, cfg.vocab_size, (batch, seq))
+    ids = torch.randint(0, vocab, (batch, seq))
     attn = torch.ones(batch, seq, dtype=torch.long)
-    attn[1, 25:] = 0
-    attn[2, 9:] = 0
+    if pads == "right":
+        attn[1, 25:] = 0
+        attn[2, 9:] = 0
+        attn[3, 1:] = 0  # a one-token row
     labels = ids.clone()
     labels[:, :6] = -100
     labels[attn == 0] = -100
@@ -231,12 +269,12 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu():
         out.loss.backward()
         return out, request, [p.grad.detach().clone() for p in params], torch.randn(4)
 
-    try:
-        base_out, _, base_grads, base_rng = run(False)
-        fast_out, request, fast_grads, fast_rng = run(True)
-    finally:
-        pm.restore_t4_triton_patches(model)
+    base_out, _, base_grads, base_rng = run(False)
+    fast_out, request, fast_grads, fast_rng = run(True)
     assert fast_out.logits is None and request.result is not None, "the fast path did not run"
+    n_layers = 2
+    assert taken["varlen"] == (n_layers if varlen and pads == "right" else 0), taken
+    assert taken["fused_mlp"] == (n_layers if fused_mlp else 0), taken
     torch.testing.assert_close(fast_out.loss, base_out.loss, rtol=1e-4, atol=1e-4)
     stats = request.result[0]
     logp = torch.log_softmax(base_out.logits.float(), -1)
@@ -247,6 +285,23 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu():
     for g_base, g_fast in zip(base_grads, fast_grads):
         rel = (g_base - g_fast).norm() / g_base.norm().clamp(min=1e-12)
         assert rel < 1e-2, float(rel)
+
+
+def test_per_row_attention_only_for_right_padding():
+    """Per-row attention is exact only when each row is [1 ... 1, 0 ... 0]; anything else
+    (left padding, holes) must keep base's masked attention."""
+    from solution.patches.patch_qwen import _right_padded_lengths
+
+    right = torch.tensor([[1, 1, 1, 0], [1, 1, 1, 1], [1, 0, 0, 0]])
+    assert _right_padded_lengths(right, int(right.sum())) == [3, 4, 1]
+    left = torch.tensor([[0, 1, 1, 1], [1, 1, 1, 1]])
+    assert _right_padded_lengths(left, int(left.sum())) is None
+    holes = torch.tensor([[1, 0, 1, 0], [1, 1, 1, 1]])
+    assert _right_padded_lengths(holes, int(holes.sum())) is None
+    full = torch.ones(2, 4, dtype=torch.long)
+    assert _right_padded_lengths(full, 8) is None  # no pads: the batch layout as in base
+    empty_row = torch.tensor([[1, 1, 0, 0], [0, 0, 0, 0]])
+    assert _right_padded_lengths(empty_row, 2) == [2]
 
 
 def test_nf4_dequant_kernel_matches_reference_math():

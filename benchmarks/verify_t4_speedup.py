@@ -3,6 +3,13 @@
     python task/prepare_data.py                       # once: data/train.jsonl
     python benchmarks/verify_t4_speedup.py            # 15 steps each side
     python benchmarks/verify_t4_speedup.py --steps 30 --out runs_bench
+    python benchmarks/verify_t4_speedup.py --matrix   # base + every solution variant below
+
+With --matrix (or --variant NAME=ENV=VALUE,ENV=VALUE, repeatable) the solution side runs once
+per variant, each in its own process with those SOUP_KERNELS_* switches, and the script prints
+the experiment table: speed, peak memory, loss deviation from base and the share of our own
+kernels in steps 3+ (timed with CUDA events by the harness's own TritonWatch from
+harness/_train.py, imported, not copied, the way check_rules.py reads it).
 
 Each side runs in its own process (the patches are process-wide), with the harness's
 environment (GPU 0, `expandable_segments` allocator, offline Hugging Face), the task config and
@@ -32,6 +39,16 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "harness"))
 
+# The experiment matrix of --matrix: one optimization switched off at a time against the
+# defaults (all on), plus the previous phase's configuration.
+MATRIX = {
+    "default": {},
+    "no_varlen_attn": {"SOUP_KERNELS_VARLEN_ATTN": "0"},
+    "no_fused_mlp_norm": {"SOUP_KERNELS_FUSED_MLP_NORM": "0"},
+    "no_mlp_recompute": {"SOUP_KERNELS_MLP_RECOMPUTE": "0"},
+    "phase1": {"SOUP_KERNELS_VARLEN_ATTN": "0", "SOUP_KERNELS_FUSED_MLP_NORM": "0"},
+}
+
 
 # ------------------------------------------------------------------------------------- worker
 
@@ -46,6 +63,9 @@ def _worker(args) -> None:
     torch.empty(1, device="cuda")
     import transformers
 
+    from _train import TIMED_FROM_STEP, TritonWatch  # the harness's own launch timer
+
+    watch = TritonWatch(torch)
     applied = None
     if args.side == "solution":
         sys.path.insert(0, str(REPO))
@@ -59,9 +79,11 @@ def _worker(args) -> None:
         def on_step_begin(self, train_args, state, control, **kwargs):
             torch.cuda.synchronize()
             self.start = time.perf_counter()
+            watch.timing = len(record["step_s"]) >= TIMED_FROM_STEP
 
         def on_step_end(self, train_args, state, control, **kwargs):
             torch.cuda.synchronize()
+            watch.timing = False
             record["step_s"].append(time.perf_counter() - self.start)
             if state.global_step >= args.steps:
                 control.should_training_stop = True
@@ -88,6 +110,9 @@ def _worker(args) -> None:
     record["wall_s"] = round(time.perf_counter() - started, 2)
     record["max_allocated_mib"] = round(torch.cuda.max_memory_allocated() / 2**20, 1)
     record["max_reserved_mib"] = round(torch.cuda.max_memory_reserved() / 2**20, 1)
+    record["own_kernel_ms"] = watch.own_ms()
+    record["timed_loop_s"] = round(sum(record["step_s"][TIMED_FROM_STEP:]), 3)
+    record["triton_launches"] = dict(watch.launches)
     Path(args.result).write_text(json.dumps(record, indent=2), encoding="utf-8")
     raise SystemExit(record["exit_code"])
 
@@ -107,29 +132,43 @@ def _make_config(train_file: Path, out_dir: Path, seed: int) -> Path:
     return path
 
 
-def _run_side(side: str, args, out: Path) -> dict:
+def _run_side(side: str, args, out: Path, name: str = None, extra_env: dict = None) -> dict:
     from common import OFFLINE_ENV, run_logged  # the harness's env and nvidia-smi poller
 
-    run_dir = out / side
+    name = name or side
+    run_dir = out / name
     run_dir.mkdir(parents=True, exist_ok=True)
     config = _make_config(Path(args.train_file).resolve(), run_dir, args.seed)
     result = run_dir / "bench.json"
     result.unlink(missing_ok=True)
     cmd = [sys.executable, str(Path(__file__).resolve()), "--worker", side, "--config",
            str(config), "--steps", str(args.steps), "--result", str(result)]
+    # A fresh Triton cache per run, as the harness does: compilation is part of every run.
     env = dict(OFFLINE_ENV, SOUP_DB_PATH=str(run_dir / "experiments.db"),
-               TRITON_CACHE_DIR=str(run_dir / "triton_cache"))
-    print(f"[bench] {side}: training {args.steps} steps ...", flush=True)
+               TRITON_CACHE_DIR=str(run_dir / "triton_cache"), **(extra_env or {}))
+    print(f"[bench] {name}: training {args.steps} steps {extra_env or ''} ...", flush=True)
     code, wall, peak, start = run_logged(cmd, run_dir / "train.log", args.timeout, env)
     data = json.loads(result.read_text(encoding="utf-8")) if result.exists() else {}
     data.update(process_exit=code, process_wall_s=wall, nvidia_smi_peak_mib=peak,
                 gpu_start_mib=start)
     if code != 0 or data.get("exit_code") != 0 or not data.get("logs"):
-        raise SystemExit(f"[bench] {side} failed (exit {code}), see {run_dir / 'train.log'}")
+        raise SystemExit(f"[bench] {name} failed (exit {code}), see {run_dir / 'train.log'}")
     if len(data.get("step_s", [])) != args.steps or len(data["logs"]) != args.steps:
-        raise SystemExit(f"[bench] {side} did not complete and log all {args.steps} requested steps; "
-                         f"see {run_dir / 'train.log'}")
+        raise SystemExit(f"[bench] {name} did not complete and log all {args.steps} requested "
+                         f"steps; see {run_dir / 'train.log'}")
     return data
+
+
+def _kernel_share(data: dict):
+    """(share of all our kernels, share without the SwiGLU ones) of steps 3+, as check 4 reads
+    it: kernel ms / (1000 * timed loop s)."""
+    loop = data.get("timed_loop_s") or 0
+    own = data.get("own_kernel_ms") or {}
+    if not loop or not own:
+        return None, None
+    total = sum(own.values())
+    no_swiglu = sum(ms for name, ms in own.items() if "swiglu" not in name)
+    return round(100 * total / (1000 * loop), 2), round(100 * no_swiglu / (1000 * loop), 2)
 
 
 def _summary(data: dict) -> dict:
@@ -137,7 +176,10 @@ def _summary(data: dict) -> dict:
     tokens = [e["num_tokens"] for e in data["logs"]]
     per_step = [b - a for a, b in zip([0.0] + tokens[:-1], tokens)]
     timed_tokens = sum(per_step[2:len(data["step_s"])])
+    share, share_no_swiglu = _kernel_share(data)
     return {
+        "own_kernel_share_pct": share,
+        "share_without_swiglu_pct": share_no_swiglu,
         "steps": len(data["step_s"]),
         "tokens_per_s": round(timed_tokens / sum(timed), 1) if timed else None,
         "median_step_s": round(sorted(timed)[len(timed) // 2], 4) if timed else None,
@@ -191,6 +233,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--out", default=None, help="directory for logs (default: a temp dir)")
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--matrix", action="store_true",
+                        help="run every solution variant of MATRIX (one switch off at a time)")
+    parser.add_argument("--variant", action="append",
+                        help="NAME=ENV=VALUE[,ENV=VALUE...]: a solution run with these switches")
     parser.add_argument("--worker", choices=("base", "solution"), help=argparse.SUPPRESS)
     parser.add_argument("--config", help=argparse.SUPPRESS)
     parser.add_argument("--result", help=argparse.SUPPRESS)
@@ -203,26 +249,65 @@ def main() -> None:
         parser.error("--steps must be at least 3 (two warmup steps and one timed step)")
     if not Path(args.train_file).exists():
         raise SystemExit(f"{args.train_file} is missing: run `python task/prepare_data.py` first")
+    variants = dict(MATRIX) if args.matrix else {}
+    for spec in args.variant or []:
+        name, _, assignments = spec.partition("=")
+        variants[name] = dict(item.split("=", 1) for item in assignments.split(",") if item)
+    if not variants:
+        variants = {"solution": {}}
+
     out = Path(args.out or tempfile.mkdtemp(prefix="soup_bench_")).resolve()
-    runs = {side: _run_side(side, args, out) for side in ("base", "solution")}
-    rows = {side: _summary(data) for side, data in runs.items()}
-    print("\n=== first", args.steps, "steps ===")
-    for side, row in rows.items():
-        print(f"{side:9s} " + "  ".join(f"{k} {v}" for k, v in row.items()))
-    b, s = rows["base"], rows["solution"]
-    if b["tokens_per_s"] and s["tokens_per_s"]:
-        print(f"speed (tokens/s, steps 3+): {s['tokens_per_s'] / b['tokens_per_s']:.3f}x")
-    print(f"peak memory, nvidia-smi: {b['nvidia_smi_peak_mib'] / s['nvidia_smi_peak_mib']:.3f}x "
-          f"lower; torch max allocated: {b['max_allocated_mib'] / s['max_allocated_mib']:.3f}x")
-    print("solution patches:", runs["solution"].get("applied"))
-    problems = _compare_curves(runs["base"], runs["solution"])
-    (out / "summary.json").write_text(json.dumps({"rows": rows, "problems": problems,
-                                                  "runs": runs}, indent=2), encoding="utf-8")
+    runs = {"base": _run_side("base", args, out)}
+    for name, env in variants.items():
+        runs[name] = _run_side("solution", args, out, name, env)
+    rows = {name: _summary(data) for name, data in runs.items()}
+    problems = {name: _compare_curves(runs["base"], data)
+                for name, data in runs.items() if name != "base"}
+
+    b = rows["base"]
+    print(f"\n=== first {args.steps} steps (speed: tokens/s over steps 3+; memory: nvidia-smi peak) ===")
+    header = (f"{'run':20s} {'tok/s':>8s} {'speed':>7s} {'peak MiB':>9s} {'mem x':>7s} "
+              f"{'alloc MiB':>10s} {'wall s':>7s} {'loss gap':>9s} {'1st gap':>8s} "
+              f"{'own %':>6s} {'-swiglu':>8s}  curves")
+    print(header)
+    for name, row in rows.items():
+        gaps = _loss_gaps(runs["base"], runs[name])
+        speed = (row["tokens_per_s"] / b["tokens_per_s"]
+                 if row["tokens_per_s"] and b["tokens_per_s"] else float("nan"))
+        mem = b["nvidia_smi_peak_mib"] / row["nvidia_smi_peak_mib"]
+        verdict = "-" if name == "base" else ("ok" if not problems[name] else "DIFFER")
+        print(f"{name:20s} {row['tokens_per_s'] or 0:8.1f} {speed:7.3f} "
+              f"{row['nvidia_smi_peak_mib']:9.0f} {mem:7.3f} {row['max_allocated_mib']:10.0f} "
+              f"{row['process_wall_s']:7.1f} {gaps[0]:8.3f}% {gaps[1]:7.3f}% "
+              f"{_fmt(row['own_kernel_share_pct']):>6s} {_fmt(row['share_without_swiglu_pct']):>8s}"
+              f"  {verdict}")
+    for name, data in runs.items():
+        if name != "base":
+            print(f"{name}: patches {data.get('applied')}")
+    (out / "summary.json").write_text(json.dumps({"variants": variants, "rows": rows,
+                                                  "problems": problems, "runs": runs},
+                                                 indent=2), encoding="utf-8")
     print(f"written: {out / 'summary.json'}")
-    if problems:
-        print("CURVES DIFFER:\n  " + "\n  ".join(problems))
+    failing = {name: p for name, p in problems.items() if p}
+    if failing:
+        for name, p in failing.items():
+            print(f"CURVES DIFFER ({name}):\n  " + "\n  ".join(p))
         raise SystemExit(1)
     print("curves match (assert_close + harness limits)")
+
+
+def _fmt(value) -> str:
+    return "-" if value is None else f"{value:.1f}"
+
+
+def _loss_gaps(base: dict, run: dict) -> tuple:
+    """(mean relative loss gap %, first-step gap %) against base, as check 6 computes them."""
+    b = [e["loss"] for e in base["logs"]]
+    s = [e["loss"] for e in run["logs"]]
+    if not b or len(b) != len(s):
+        return float("nan"), float("nan")
+    mean = sum(abs(x - y) / max(abs(y), 1e-12) for x, y in zip(s, b)) / len(b)
+    return 100 * mean, 100 * abs(s[0] - b[0]) / max(abs(b[0]), 1e-12)
 
 
 if __name__ == "__main__":

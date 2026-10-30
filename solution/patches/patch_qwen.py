@@ -5,9 +5,11 @@ Entry points (installed by `solution.apply()`):
 * `Qwen2ForCausalLM.forward` (class patch). When a training step asks for it (see below) and the
   model is the 4-bit NF4 Qwen2 + LoRA that Soup builds for this task, the decoder runs here:
     - pad tokens are dropped: every per-token op (norms, projections, LoRA, MLP, lm_head, loss)
-      sees only the real tokens of the batch; attention still runs on the padded [B, H, S, D]
-      layout through transformers' own SDPA call with the same mask, so it computes what base
-      computes (the README rules allow removing padding inside a batch);
+      sees only the real tokens of the batch (the README rules allow removing padding inside a
+      batch). Attention: on a right-padded batch each row runs causal SDPA over its own real
+      tokens (exactly what base's mask allows them to see, see `_varlen_attention`); otherwise
+      it runs on the padded [B, H, S, D] layout through transformers' own SDPA call with base's
+      mask;
     - RMSNorm + residual add, LoRA add + RoPE, SwiGLU, NF4 unpacking and the lm_head + loss are
       the Triton kernels of solution/kernels (rmsnorm, rope, swiglu, nf4, cross_entropy);
     - no [B, S, V] logits: the output carries the loss and no logits.
@@ -37,7 +39,8 @@ import torch.nn.functional as F
 
 from .. import _runtime
 from ..kernels.cross_entropy import IGNORE_INDEX, fused_linear_cross_entropy
-from ..kernels.nf4 import gate_up_swiglu, is_linear4bit, nf4_eligible, nf4_linear
+from ..kernels.nf4 import (add_norm_gate_up_swiglu, gate_up_swiglu, is_linear4bit, nf4_eligible,
+                           nf4_linear)
 from ..kernels.rmsnorm import add_rmsnorm
 from ..kernels.rope import rope_lora_scatter
 from ..kernels.swiglu import swiglu
@@ -56,7 +59,7 @@ class _StepRequest:
 
 
 class _LayerCtx:
-    def __init__(self, batch, seq, dst, cos, sin, cos_row, mask, block_heads):
+    def __init__(self, batch, seq, dst, cos, sin, cos_row, mask, block_heads, row_lengths=None):
         self.batch, self.seq = batch, seq
         self.dst = dst  # [T] flat index b * S + s of each real token
         self.n_tok = dst.numel()
@@ -64,6 +67,12 @@ class _LayerCtx:
         self.cos, self.sin, self.cos_row = cos, sin, cos_row
         self.mask = mask
         self.block_heads = block_heads
+        # Right-padded batch with pads: the real length of each row (rows with no token left
+        # out), and the identity scatter index of the token-major layout [1, H, T, D]. None:
+        # attention runs on the padded layout with `mask`.
+        self.row_lengths = row_lengths
+        self.ident = (torch.arange(self.n_tok, device=dst.device)
+                      if row_lengths is not None else None)
 
 
 # --------------------------------------------------------------------------- module helpers
@@ -164,6 +173,9 @@ def _attention(attn, x32, ctx: _LayerCtx):
     k_base, k_lora = _proj_parts(attn.k_proj, x32, ctx, padded)
     v_base, v_lora = _proj_parts(attn.v_proj, x32, ctx, padded)
     del padded
+    if ctx.row_lengths is not None and not (attn.training and attn.attention_dropout):
+        return _linear16(attn.o_proj, _varlen_attention(attn, ctx, q_base, q_lora, k_base,
+                                                        k_lora, v_base, v_lora))
     common = (ctx.cos, ctx.sin, ctx.cos_row, ctx.dst, ctx.batch, ctx.seq)
     q = rope_lora_scatter(q_base, q_lora, *common, n_heads, True, ctx.block_heads)
     k = rope_lora_scatter(k_base, k_lora, *common, n_kv, True, ctx.block_heads)
@@ -177,6 +189,54 @@ def _attention(attn, x32, ctx: _LayerCtx):
     if not ctx.full:
         out = out.index_select(0, ctx.dst)
     return _linear16(attn.o_proj, out)
+
+
+def _varlen_attention(attn, ctx: _LayerCtx, q_base, q_lora, k_base, k_lora, v_base, v_lora):
+    """Causal attention of each row over its own real tokens only (right-padded batch).
+
+    With right padding, base's mask lets the query at position s of row b see exactly the keys
+    0..s of the same row, all of them real: that is plain causal attention over the row's
+    first L_b tokens. So each row runs SDPA with `is_causal=True` and no mask on its L_b tokens,
+    which skips every pad query and pad key (attention work sum(L_b^2) instead of B * S^2),
+    stores q/k/v and the output for real tokens only, and needs no zero-filled padded tensors.
+
+    The RoPE kernel writes q/k/v token-major, [1, heads, T, D] (batch 1, "sequence" = the T real
+    tokens in row order, each rotated at its own position s via cos_row); `split` hands each row
+    a view without a copy, and its backward concatenates the row gradients in one pass. k/v are
+    expanded to the query heads with transformers' repeat_kv, as the masked SDPA path of base
+    does. The per-row outputs are concatenated in row order: the [T, H * D] rows o_proj reads.
+    """
+    import torch.nn.functional as F
+    from transformers.models.qwen2 import modeling_qwen2 as mq
+
+    config = attn.config
+    n_heads, n_kv, head_dim = config.num_attention_heads, config.num_key_value_heads, attn.head_dim
+    common = (ctx.cos, ctx.sin, ctx.cos_row, ctx.ident, 1, ctx.n_tok)
+    q = rope_lora_scatter(q_base, q_lora, *common, n_heads, True, ctx.block_heads)
+    k = rope_lora_scatter(k_base, k_lora, *common, n_kv, True, ctx.block_heads)
+    v = rope_lora_scatter(v_base, v_lora, *common, n_kv, False, ctx.block_heads)
+    groups = n_heads // n_kv
+    outs = []
+    for qi, ki, vi in zip(q.split(ctx.row_lengths, dim=2), k.split(ctx.row_lengths, dim=2),
+                          v.split(ctx.row_lengths, dim=2)):
+        if groups > 1:
+            ki, vi = mq.repeat_kv(ki, groups), mq.repeat_kv(vi, groups)
+        oi = F.scaled_dot_product_attention(qi, ki, vi, dropout_p=0.0, is_causal=True,
+                                            scale=attn.scaling)
+        outs.append(oi.transpose(1, 2).reshape(qi.shape[2], n_heads * head_dim))
+    return torch.cat(outs, dim=0) if len(outs) > 1 else outs[0]
+
+
+def _post_attention(layer, resid, attn_out):
+    """(new residual, MLP output) of the second half of a decoder layer."""
+    norm, mlp = layer.post_attention_layernorm, layer.mlp
+    if _runtime.FUSED_MLP_NORM and nf4_eligible(mlp.gate_proj) and nf4_eligible(mlp.up_proj):
+        resid, p = add_norm_gate_up_swiglu(resid, attn_out, norm.weight, norm.variance_epsilon,
+                                           mlp.gate_proj, mlp.up_proj,
+                                           recompute=_runtime.MLP_RECOMPUTE)
+        return resid, _linear16(mlp.down_proj, p)
+    resid, x = add_rmsnorm(resid, attn_out, norm.weight, norm.variance_epsilon)
+    return resid, _mlp(mlp, x)
 
 
 def _mlp(mlp, x32):
@@ -271,6 +331,22 @@ def _step_reason(lm, input_ids, inputs_embeds, labels, past_key_values, use_cach
 # ------------------------------------------------------------------------------ the forward
 
 
+def _right_padded_lengths(attention_mask, n_tok: int) -> Optional[list[int]]:
+    """Per-row real lengths when the batch has pads and every row is [1 ... 1, 0 ... 0] (TRL's
+    collator pads on the right), so per-row attention applies; else None. One host sync, only
+    for batches that have pads."""
+    batch, seq = attention_mask.shape
+    if not (_runtime.UNPAD and _runtime.VARLEN_ATTN) or n_tok == batch * seq:
+        return None
+    real = attention_mask != 0
+    lengths = real.sum(dim=1)
+    right = (real == (torch.arange(seq, device=real.device) < lengths[:, None])).all()
+    info = torch.cat((lengths, right.reshape(1).to(lengths.dtype))).tolist()
+    if not info[-1]:
+        return None
+    return [int(n) for n in info[:-1] if n > 0]
+
+
 def _fast_forward(lm, input_ids, attention_mask, labels, num_items_in_batch, request):
     from transformers.models.qwen2 import modeling_qwen2 as mq
 
@@ -289,21 +365,22 @@ def _fast_forward(lm, input_ids, attention_mask, labels, num_items_in_batch, req
     hidden = _embed_fp32(model.embed_tokens, input_ids.reshape(-1).index_select(0, dst))
     probe = hidden.new_empty((1, 1, 1))
     cos, sin = model.rotary_emb(probe, position_ids)  # [1, S, D] fp32, as base builds them
-    mask = mq.create_causal_mask(config=config,
-                                 inputs_embeds=probe.expand(batch, seq, config.hidden_size),
-                                 attention_mask=attention_mask, past_key_values=None,
-                                 position_ids=position_ids)
+    row_lengths = _right_padded_lengths(attention_mask, dst.numel())
+    mask = None
+    if row_lengths is None:  # the padded path needs base's 4-D mask (None if no padding)
+        mask = mq.create_causal_mask(config=config,
+                                     inputs_embeds=probe.expand(batch, seq, config.hidden_size),
+                                     attention_mask=attention_mask, past_key_values=None,
+                                     position_ids=position_ids)
     ctx = _LayerCtx(batch, seq, dst, cos[0], sin[0], cos_row, mask,
-                    _runtime.next_pow2(config.num_attention_heads))
+                    _runtime.next_pow2(config.num_attention_heads), row_lengths)
 
     resid, delta = hidden, None
     for layer in model.layers[: config.num_hidden_layers]:
         norm = layer.input_layernorm
         resid, x = add_rmsnorm(resid, delta, norm.weight, norm.variance_epsilon)
         attn_out = _attention(layer.self_attn, x, ctx)
-        norm = layer.post_attention_layernorm
-        resid, x = add_rmsnorm(resid, attn_out, norm.weight, norm.variance_epsilon)
-        delta = _mlp(layer.mlp, x)
+        resid, delta = _post_attention(layer, resid, attn_out)
     resid, hidden = add_rmsnorm(resid, delta, model.norm.weight, model.norm.variance_epsilon)
 
     # ForCausalLMLoss: position t is scored against labels[t + 1]

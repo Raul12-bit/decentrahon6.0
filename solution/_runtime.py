@@ -14,6 +14,13 @@ reproduced (or bisected on Kaggle) without editing code:
                                    ~1.7 GB of activations on the largest batch, against two
                                    extra GEMMs per layer in backward that reuse the weight the
                                    input gradient unpacks anyway)
+    SOUP_KERNELS_VARLEN_ATTN=0     attention on the padded [B, H, S, D] layout with a mask (the
+                                   default 1 runs it per row on the row's real tokens when the
+                                   batch is right-padded: ~42% of the padded attention work on
+                                   this task's data, and no q/k/v/output storage for pads)
+    SOUP_KERNELS_FUSED_MLP_NORM=0  separate post-attention RMSNorm (fp32 output + cast) and MLP
+                                   (default 1: one autograd function, fp16 norm output, x16 not
+                                   saved for backward)
     SOUP_KERNELS_VERBOSE=1         print why a step falls back to the plain path
 
 The kernels target a Tesla T4 (sm_75): fp16 storage, fp32 math, no bf16.
@@ -45,6 +52,8 @@ UNPAD = _flag("SOUP_KERNELS_UNPAD", True)
 FP16_EMBED = _flag("SOUP_KERNELS_FP16_EMBED", True)
 WARMUP = _flag("SOUP_KERNELS_WARMUP", True)
 MLP_RECOMPUTE = _flag("SOUP_KERNELS_MLP_RECOMPUTE", True)
+VARLEN_ATTN = _flag("SOUP_KERNELS_VARLEN_ATTN", True)
+FUSED_MLP_NORM = _flag("SOUP_KERNELS_FUSED_MLP_NORM", True)
 CE_CHUNK = max(16, _int("SOUP_KERNELS_CE_CHUNK", 256))
 VERBOSE = _flag("SOUP_KERNELS_VERBOSE", False)
 # Only for the kernel tests on a machine without a GPU: TRITON_INTERPRET=1 runs the

@@ -101,6 +101,9 @@ def compile_kernels(config, device) -> list[str]:
         ref_out, ref_y = ref_add_rmsnorm(resid, delta, weight, eps)
         _close("rmsnorm forward", y, ref_y, 1e-4, problems)
         _close("residual add", out, ref_out, 1e-6, problems)
+        # the fp16-output variant (post-attention norm fused into the MLP): its own binary
+        _, y16, _ = _norm_fwd(resid, delta, weight, eps, f16)
+        _close("rmsnorm forward fp16", y16, ref_y.to(f16), 2e-3, problems)
         dx, _ = _norm_bwd(torch.ones_like(out), None, out, weight, rstd, True)
         _close("rmsnorm backward finite", dx, dx.nan_to_num(), 0.0, problems)
         # SwiGLU (fp16)

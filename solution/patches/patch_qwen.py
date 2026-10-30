@@ -41,7 +41,9 @@ from .. import _runtime
 from ..kernels.cross_entropy import IGNORE_INDEX, fused_linear_cross_entropy
 from ..kernels.nf4 import (add_norm_gate_up_swiglu, gate_up_swiglu, is_linear4bit, nf4_eligible,
                            nf4_linear)
-from ..kernels.rmsnorm import add_rmsnorm
+from ..kernels.lora import enabled as lora_remat_enabled
+from ..kernels.lora import lora_remat
+from ..kernels.rmsnorm import add_rmsnorm, add_rmsnorm_rstd
 from ..kernels.rope import rope_lora_scatter
 from ..kernels.swiglu import swiglu
 
@@ -112,15 +114,29 @@ class _PaddedInput:
     """The attention input on the padded [B * S, H] layout (zeros at the pads), built at most
     once per layer and shared by the q and v LoRA dropouts."""
 
-    def __init__(self, x32, ctx: _LayerCtx):
-        self.x32, self.ctx, self.padded = x32, ctx, None
+    def __init__(self, x32, ctx: _LayerCtx, norm_state=None):
+        self.x32, self.ctx = x32, ctx
+        self.norm_state = norm_state  # (resid, rstd, weight, eps) of the norm that made x32
+        self.full, self.dst = ctx.full, ctx.dst
+        self._with_grad = None
+        self._detached = None
 
     def get(self):
-        if self.padded is None:
+        """The padded copy inside the autograd graph (peft's LoRA path)."""
+        if self._with_grad is None:
             ctx = self.ctx
-            self.padded = self.x32.new_zeros((ctx.batch * ctx.seq, self.x32.shape[1]))
-            self.padded = self.padded.index_copy(0, ctx.dst, self.x32)
-        return self.padded
+            padded = self.x32.new_zeros((ctx.batch * ctx.seq, self.x32.shape[1]))
+            self._with_grad = padded.index_copy(0, ctx.dst, self.x32)
+        return self._with_grad
+
+    def padded(self):
+        """The padded copy without autograd: the layout interface of kernels/lora.py."""
+        if self._detached is None:
+            ctx = self.ctx
+            with torch.no_grad():
+                self._detached = self.x32.new_zeros((ctx.batch * ctx.seq, self.x32.shape[1]))
+                self._detached.index_copy_(0, ctx.dst, self.x32.detach())
+        return self._detached
 
 
 def _dropout_like_base(dropout, x32, ctx: _LayerCtx, padded: Optional[_PaddedInput] = None):
@@ -157,17 +173,37 @@ def _proj_parts(module, x32, ctx, padded: Optional[_PaddedInput] = None):
     if lora is None:
         return base16, None
     lora_a, lora_b, dropout, scaling = lora
+    p = _remat_dropout_p(lora_a, lora_b, dropout, padded)
+    if p is not None:
+        resid, rstd, norm_weight, eps = padded.norm_state
+        return base16, lora_remat(x32, lora_a.weight, lora_b.weight, resid, rstd, norm_weight,
+                                  eps, scaling, p, padded)
     dropped = _dropout_like_base(dropout, x32, ctx, padded)
     out = lora_b(lora_a(dropped)) * scaling  # fp16 under autocast
     return base16, out
 
 
-def _attention(attn, x32, ctx: _LayerCtx):
+def _remat_dropout_p(lora_a, lora_b, dropout, padded) -> Optional[float]:
+    """The dropout probability if this LoRA branch can take kernels/lora.py (plain bias-free
+    Linear A/B, nn.Dropout or none, the input norm's state at hand), else None."""
+    if padded is None or padded.norm_state is None or not lora_remat_enabled():
+        return None
+    if type(lora_a) is not torch.nn.Linear or type(lora_b) is not torch.nn.Linear \
+            or lora_a.bias is not None or lora_b.bias is not None:
+        return None
+    if isinstance(dropout, torch.nn.Identity):
+        return 0.0
+    if type(dropout) is not torch.nn.Dropout:
+        return None
+    return float(dropout.p) if dropout.training and 0.0 < dropout.p < 1.0 else 0.0
+
+
+def _attention(attn, x32, ctx: _LayerCtx, norm_state=None):
     from transformers.models.qwen2 import modeling_qwen2 as mq
 
     config = attn.config
     n_heads, n_kv, head_dim = config.num_attention_heads, config.num_key_value_heads, attn.head_dim
-    padded = _PaddedInput(x32, ctx)
+    padded = _PaddedInput(x32, ctx, norm_state)
     # The order of q, k, v (and so of their dropout masks) is base's.
     q_base, q_lora = _proj_parts(attn.q_proj, x32, ctx, padded)
     k_base, k_lora = _proj_parts(attn.k_proj, x32, ctx, padded)
@@ -378,8 +414,9 @@ def _fast_forward(lm, input_ids, attention_mask, labels, num_items_in_batch, req
     resid, delta = hidden, None
     for layer in model.layers[: config.num_hidden_layers]:
         norm = layer.input_layernorm
-        resid, x = add_rmsnorm(resid, delta, norm.weight, norm.variance_epsilon)
-        attn_out = _attention(layer.self_attn, x, ctx)
+        resid, x, rstd = add_rmsnorm_rstd(resid, delta, norm.weight, norm.variance_epsilon)
+        attn_out = _attention(layer.self_attn, x, ctx,
+                              (resid, rstd, norm.weight, norm.variance_epsilon))
         resid, delta = _post_attention(layer, resid, attn_out)
     resid, hidden = add_rmsnorm(resid, delta, model.norm.weight, model.norm.variance_epsilon)
 
@@ -621,6 +658,8 @@ def apply_t4_triton_patches(model) -> dict:
         from ..warmup import ensure_checked
 
         problems = ensure_checked(lm.config, lm.lm_head.weight.device)
+        if not problems:
+            _check_lora_dropout(model, lm.lm_head.weight.device)
         if problems:
             restore_t4_triton_patches(model)
             report["fp16_table"] = False
@@ -630,6 +669,20 @@ def apply_t4_triton_patches(model) -> dict:
             _runtime.log(f"fast path off: {reason}")
     _runtime.log(f"prepared {report}")
     return report
+
+
+def _check_lora_dropout(model, device) -> None:
+    """Before training, on this device: does kernels/lora.py draw and apply the LoRA dropout
+    exactly like F.dropout? If not, its rematerialization stays off (peft's branch is used)."""
+    from ..kernels import lora
+
+    if not _runtime.LORA_REMAT or lora.STATE["checked"]:
+        return
+    rates = {float(m.p) for m in model.modules()
+             if type(m) is torch.nn.Dropout and 0.0 < m.p < 1.0}
+    for p in sorted(rates):
+        if lora.dropout_self_check(device, p) is not None:
+            return
 
 
 def _store_table_fp16(lm) -> bool:

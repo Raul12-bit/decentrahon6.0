@@ -209,14 +209,15 @@ def tiny_qlora_qwen2():
     pm.restore_t4_triton_patches(model)
 
 
-@pytest.mark.parametrize("pads,varlen,fused_mlp", [
-    ("right", True, True),     # the defaults on a padded batch: per-row attention, fused MLP
-    ("right", False, True),    # padded attention with base's 4-D mask
-    ("right", True, False),    # separate post-attention norm + MLP
-    ("none", True, True),      # no pads: the batch layout, base's mask (None)
+@pytest.mark.parametrize("pads,varlen,fused_mlp,remat", [
+    ("right", True, True, True),     # the defaults on a padded batch
+    ("right", False, True, True),    # padded attention with base's 4-D mask
+    ("right", True, False, True),    # separate post-attention norm + MLP
+    ("right", True, True, False),    # peft's own LoRA branch (saves its fp16 input)
+    ("none", True, True, True),      # no pads: the batch layout, base's mask (None)
 ])
 def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu(tiny_qlora_qwen2, monkeypatch, pads,
-                                                       varlen, fused_mlp):
+                                                       varlen, fused_mlp, remat):
     """The whole patched training forward + backward (every kernel above, wired by
     patches/patch_qwen.py) against base transformers + peft + bitsandbytes with LoRA dropout:
     same loss, entropy, dropout RNG stream and LoRA gradients, on each code path."""
@@ -226,8 +227,16 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu(tiny_qlora_qwen2, monkeyp
     model, vocab = tiny_qlora_qwen2
     monkeypatch.setattr(_runtime, "VARLEN_ATTN", varlen)
     monkeypatch.setattr(_runtime, "FUSED_MLP_NORM", fused_mlp)
-    taken = {"varlen": 0, "fused_mlp": 0}
-    real_varlen, real_post = pm._varlen_attention, pm.add_norm_gate_up_swiglu
+    monkeypatch.setattr(_runtime, "LORA_REMAT", remat)
+    taken = {"varlen": 0, "fused_mlp": 0, "remat": 0}
+    real_varlen, real_post, real_remat = (pm._varlen_attention, pm.add_norm_gate_up_swiglu,
+                                          pm.lora_remat)
+
+    def count_remat(*args, **kwargs):
+        taken["remat"] += 1
+        return real_remat(*args, **kwargs)
+
+    monkeypatch.setattr(pm, "lora_remat", count_remat)
 
     def count_varlen(*args, **kwargs):
         taken["varlen"] += 1
@@ -275,6 +284,7 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu(tiny_qlora_qwen2, monkeyp
     n_layers = 2
     assert taken["varlen"] == (n_layers if varlen and pads == "right" else 0), taken
     assert taken["fused_mlp"] == (n_layers if fused_mlp else 0), taken
+    assert taken["remat"] == (2 * n_layers if remat else 0), taken  # q and v of every layer
     torch.testing.assert_close(fast_out.loss, base_out.loss, rtol=1e-4, atol=1e-4)
     stats = request.result[0]
     logp = torch.log_softmax(base_out.logits.float(), -1)
@@ -285,6 +295,78 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu(tiny_qlora_qwen2, monkeyp
     for g_base, g_fast in zip(base_grads, fast_grads):
         rel = (g_base - g_fast).norm() / g_base.norm().clamp(min=1e-12)
         assert rel < 1e-2, float(rel)
+
+
+@pytest.mark.parametrize("pads", [False, True])
+def test_lora_remat_is_bit_identical_to_peft_branch(pads):
+    """kernels/lora.py against what base computes: peft's lora_B(lora_A(dropout(x))) * scaling
+    under fp16 autocast, dropout on the padded layout, x = the input norm's fp32 output. Output,
+    dA, dB, dx and the RNG advance must be bit for bit the same: the rebuilt x16 is exact."""
+    from types import SimpleNamespace
+
+    from solution.kernels.lora import lora_remat
+    from solution.kernels.rmsnorm import add_rmsnorm_rstd
+
+    hidden, rank, out_features, scaling, p = HIDDEN, 16, HIDDEN, 2.0, 0.05
+    batch, seq = 3, 9
+    attn = torch.ones(batch, seq, dtype=torch.long)
+    if pads:
+        attn[1, 5:] = 0
+        attn[2, 2:] = 0
+    dst = attn.reshape(-1).nonzero().squeeze(1)
+    resid0 = torch.randn(dst.numel(), hidden)
+    delta = torch.randn(dst.numel(), hidden).half()
+    norm_w = torch.rand(hidden) + 0.5
+    a_ref = (torch.randn(rank, hidden) * 0.02).requires_grad_(True)
+    b_ref = (torch.randn(out_features, rank) * 0.02).requires_grad_(True)
+    grad_out = torch.randn(dst.numel(), out_features).half()
+
+    # peft's modules, built before any seed is set (their init draws random numbers)
+    lin_a = torch.nn.Linear(hidden, rank, bias=False)
+    lin_b = torch.nn.Linear(rank, out_features, bias=False)
+    lin_a.weight, lin_b.weight = torch.nn.Parameter(a_ref), torch.nn.Parameter(b_ref)
+    drop = torch.nn.Dropout(p).train()
+
+    def peft_branch(x32):
+        if pads:
+            padded = x32.new_zeros((batch * seq, hidden)).index_copy(0, dst, x32)
+            dropped = drop(padded).index_select(0, dst)
+        else:
+            dropped = drop(x32)
+        with torch.autocast("cpu", dtype=torch.float16):
+            return lin_b(lin_a(dropped)) * scaling, lin_a.weight, lin_b.weight
+
+    results = []
+    for ours in (False, True):
+        r = resid0.clone().requires_grad_(True)
+        resid, x32, rstd = add_rmsnorm_rstd(r, delta, norm_w, 1e-6)
+        torch.manual_seed(99)
+        if ours:
+            a = a_ref.detach().clone().requires_grad_(True)
+            b = b_ref.detach().clone().requires_grad_(True)
+            layout = SimpleNamespace(full=not pads, dst=dst,
+                                     padded=lambda: x32.detach().new_zeros(
+                                         (batch * seq, hidden)).index_copy(0, dst,
+                                                                           x32.detach()))
+            out = lora_remat(x32, a, b, resid, rstd, norm_w, 1e-6, scaling, p, layout)
+        else:
+            out, a, b = peft_branch(x32)
+        rng_after = torch.rand(4)
+        out.backward(grad_out)
+        results.append((out.detach(), a.grad, b.grad, r.grad, rng_after))
+    for name, ref, got in zip(("out", "dA", "dB", "dresid", "rng"), results[0], results[1]):
+        assert ref.dtype == got.dtype, name
+        assert torch.equal(ref, got), f"{name}: max diff {(ref.float() - got.float()).abs().max()}"
+
+
+def test_lora_dropout_self_check_passes_and_keeps_rng():
+    from solution.kernels import lora
+
+    torch.manual_seed(5)
+    before = torch.get_rng_state()
+    assert lora.dropout_self_check(torch.device("cpu"), 0.05) is None
+    assert torch.equal(torch.get_rng_state(), before), "the check must not move the RNG"
+    assert lora.STATE["enabled"]
 
 
 def test_per_row_attention_only_for_right_padding():

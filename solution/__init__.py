@@ -7,6 +7,8 @@
     │   ├── rope.py           LoRA add + RoPE + scatter to SDPA's layout (fwd + bwd)
     │   ├── swiglu.py         fp16 SwiGLU, backward in place (not counted as our own kernel)
     │   ├── cross_entropy.py  chunked lm_head + cross-entropy + TRL / rewind telemetry
+    │   ├── lora.py           q/v LoRA branch that rebuilds its input in backward (no Triton
+    │   │                     kernel of its own: it reruns rmsnorm's)
     │   └── nf4.py            NF4 double-quant unpacking (+ 4-bit gate/up/down matmuls)
     ├── patches/patch_qwen.py the fused Qwen2 training forward and the trainer hooks
     ├── warmup.py             compile + self-check the kernels while the model loads

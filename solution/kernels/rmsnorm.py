@@ -149,16 +149,19 @@ def _norm_bwd(dy, dres, x, weight, rstd, with_delta: bool):
 
 
 class AddRMSNormFunction(torch.autograd.Function):
-    """(resid + delta, RMSNorm(resid + delta)) in one pass. resid fp32, delta fp16."""
+    """(resid + delta, RMSNorm(resid + delta), rstd) in one pass. resid fp32, delta fp16.
+    rstd is a non-differentiable output: what a later function needs to rebuild the
+    normalized row from the residual (which this function keeps anyway)."""
 
     @staticmethod
     def forward(ctx, resid, delta, weight, eps):
         resid_out, y, rstd = _norm_fwd(resid, delta, weight, eps)
         ctx.save_for_backward(resid_out, weight, rstd)
-        return resid_out, y
+        ctx.mark_non_differentiable(rstd)
+        return resid_out, y, rstd
 
     @staticmethod
-    def backward(ctx, dres, dy):
+    def backward(ctx, dres, dy, _drstd):
         x, weight, rstd = ctx.saved_tensors
         if dy is None:
             dy = torch.zeros_like(x)
@@ -167,27 +170,36 @@ class AddRMSNormFunction(torch.autograd.Function):
 
 
 class RMSNormFunction(torch.autograd.Function):
-    """RMSNorm of an fp32 residual stream, no add (the first layer's input norm)."""
+    """(RMSNorm of an fp32 residual stream, rstd), no add (the first layer's input norm)."""
 
     @staticmethod
     def forward(ctx, x, weight, eps):
         _, y, rstd = _norm_fwd(x, None, weight, eps)
         ctx.save_for_backward(x, weight, rstd)
-        return y
+        ctx.mark_non_differentiable(rstd)
+        return y, rstd
 
     @staticmethod
-    def backward(ctx, dy):
+    def backward(ctx, dy, _drstd):
         x, weight, rstd = ctx.saved_tensors
         dx, _ = _norm_bwd(dy, None, x, weight, rstd, with_delta=False)
         return dx, None, None
 
 
+def add_rmsnorm_rstd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
+                     eps: float):
+    """(new residual, normalized, rstd). With delta None the residual is returned as is."""
+    if delta is None:
+        y, rstd = RMSNormFunction.apply(resid, weight, eps)
+        return resid, y, rstd
+    return AddRMSNormFunction.apply(resid, delta, weight, eps)
+
+
 def add_rmsnorm(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.Tensor,
                 eps: float):
     """Returns (new residual, normalized). With delta None the residual is returned as is."""
-    if delta is None:
-        return resid, RMSNormFunction.apply(resid, weight, eps)
-    return AddRMSNormFunction.apply(resid, delta, weight, eps)
+    resid_out, y, _ = add_rmsnorm_rstd(resid, delta, weight, eps)
+    return resid_out, y
 
 
 def ref_add_rmsnorm(resid, delta, weight, eps):

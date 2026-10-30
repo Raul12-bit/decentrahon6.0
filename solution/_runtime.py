@@ -21,6 +21,9 @@ reproduced (or bisected on Kaggle) without editing code:
     SOUP_KERNELS_FUSED_MLP_NORM=0  separate post-attention RMSNorm (fp32 output + cast) and MLP
                                    (default 1: one autograd function, fp16 norm output, x16 not
                                    saved for backward)
+    SOUP_KERNELS_LORA_REMAT=0      keep peft's LoRA branch, which saves its fp16 input (default
+                                   1: rebuild it in backward from the norm's residual + the
+                                   dropout mask; -6 KB per token per layer)
     SOUP_KERNELS_VERBOSE=1         print why a step falls back to the plain path
 
 The kernels target a Tesla T4 (sm_75): fp16 storage, fp32 math, no bf16.
@@ -54,6 +57,7 @@ WARMUP = _flag("SOUP_KERNELS_WARMUP", True)
 MLP_RECOMPUTE = _flag("SOUP_KERNELS_MLP_RECOMPUTE", True)
 VARLEN_ATTN = _flag("SOUP_KERNELS_VARLEN_ATTN", True)
 FUSED_MLP_NORM = _flag("SOUP_KERNELS_FUSED_MLP_NORM", True)
+LORA_REMAT = _flag("SOUP_KERNELS_LORA_REMAT", True)
 CE_CHUNK = max(16, _int("SOUP_KERNELS_CE_CHUNK", 256))
 VERBOSE = _flag("SOUP_KERNELS_VERBOSE", False)
 # Only for the kernel tests on a machine without a GPU: TRITON_INTERPRET=1 runs the

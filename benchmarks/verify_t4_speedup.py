@@ -42,11 +42,13 @@ sys.path.insert(0, str(REPO / "harness"))
 # The experiment matrix of --matrix: one optimization switched off at a time against the
 # defaults (all on), plus the previous phase's configuration.
 MATRIX = {
-    "default": {},
+    "default": {},  # phase 3: every switch on
     "no_varlen_attn": {"SOUP_KERNELS_VARLEN_ATTN": "0"},
     "no_fused_mlp_norm": {"SOUP_KERNELS_FUSED_MLP_NORM": "0"},
+    "no_lora_remat": {"SOUP_KERNELS_LORA_REMAT": "0"},  # = phase 2
     "no_mlp_recompute": {"SOUP_KERNELS_MLP_RECOMPUTE": "0"},
-    "phase1": {"SOUP_KERNELS_VARLEN_ATTN": "0", "SOUP_KERNELS_FUSED_MLP_NORM": "0"},
+    "phase1": {"SOUP_KERNELS_VARLEN_ATTN": "0", "SOUP_KERNELS_FUSED_MLP_NORM": "0",
+               "SOUP_KERNELS_LORA_REMAT": "0"},
 }
 
 
@@ -135,16 +137,25 @@ def _make_config(train_file: Path, out_dir: Path, seed: int) -> Path:
 def _run_side(side: str, args, out: Path, name: str = None, extra_env: dict = None) -> dict:
     from common import OFFLINE_ENV, run_logged  # the harness's env and nvidia-smi poller
 
+    import shutil
+
     name = name or side
     run_dir = out / name
-    run_dir.mkdir(parents=True, exist_ok=True)
+    # A fresh directory, as run_task.py does: a Triton cache left by an earlier run with the
+    # same --out would hide the compilation time this run must pay.
+    shutil.rmtree(run_dir, ignore_errors=True)
+    run_dir.mkdir(parents=True)
     config = _make_config(Path(args.train_file).resolve(), run_dir, args.seed)
     result = run_dir / "bench.json"
     result.unlink(missing_ok=True)
     cmd = [sys.executable, str(Path(__file__).resolve()), "--worker", side, "--config",
            str(config), "--steps", str(args.steps), "--result", str(result)]
     # A fresh Triton cache per run, as the harness does: compilation is part of every run.
-    env = dict(OFFLINE_ENV, SOUP_DB_PATH=str(run_dir / "experiments.db"),
+    # The harness's env copies os.environ, so a SOUP_KERNELS_* switch set in the notebook would
+    # leak into every variant (and mislabel "default"): drop them, then apply this variant's.
+    env = {key: value for key, value in OFFLINE_ENV.items()
+           if not key.startswith("SOUP_KERNELS")}
+    env.update(SOUP_DB_PATH=str(run_dir / "experiments.db"),
                TRITON_CACHE_DIR=str(run_dir / "triton_cache"), **(extra_env or {}))
     print(f"[bench] {name}: training {args.steps} steps {extra_env or ''} ...", flush=True)
     code, wall, peak, start = run_logged(cmd, run_dir / "train.log", args.timeout, env)

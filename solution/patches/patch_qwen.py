@@ -246,9 +246,9 @@ def _varlen_attention(attn, ctx: _LayerCtx, q_base, q_lora, k_base, k_lora, v_ba
     a view without a copy, and its backward concatenates the row gradients in one pass. k/v go
     to SDPA as they are with `enable_gqa` (no expanded copies to keep: -5 KB per token per layer;
     transformers takes the same route when there is no mask and head_dim <= 256), or, if that is
-    switched off or failed `_check_gqa_attention`, expanded with transformers' repeat_kv as the
-    masked SDPA path of base does. The per-row outputs are concatenated in row order: the
-    [T, H * D] rows o_proj reads.
+    switched off or failed `_check_gqa_attention` (as it does on a T4, see `_gqa_problem`),
+    expanded with transformers' repeat_kv as the masked SDPA path of base does. The per-row
+    outputs are concatenated in row order: the [T, H * D] rows o_proj reads.
     """
     import torch.nn.functional as F
     from transformers.models.qwen2 import modeling_qwen2 as mq
@@ -279,7 +279,11 @@ def _gqa_enabled(head_dim: int) -> bool:
 
 def _gqa_problem(config, device) -> Optional[str]:
     """None if SDPA with enable_gqa matches the expanded k/v path on this device, forward and
-    backward, without falling back to the math backend (which keeps the attention matrix)."""
+    backward, without falling back to the math backend (which keeps the attention matrix).
+
+    On a T4 (sm_75) it falls back: PyTorch's flash and cuDNN kernels need sm_80, and its
+    memory-efficient kernel, the one fused kernel left, needs as many k/v heads as query heads.
+    So the saving is for sm_80+ GPUs; a T4 run keeps k/v expanded."""
     from transformers.models.qwen2 import modeling_qwen2 as mq
 
     n_heads, n_kv = int(config.num_attention_heads), int(config.num_key_value_heads)

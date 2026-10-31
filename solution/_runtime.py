@@ -35,7 +35,9 @@ reproduced (or bisected on Kaggle) without editing code:
                                    890 MiB block at that point raised the measured peak)
     SOUP_KERNELS_GQA_ATTN=0        per-row attention expands k/v to the query heads (default 1:
                                    SDPA reads them as they are with enable_gqa, if a check on
-                                   the device passes; -5 KB per token per layer)
+                                   the device passes; -5 KB per token per layer. On a T4 it does
+                                   not pass: the only fused SDPA kernel there, memory-efficient,
+                                   takes no grouped k/v heads, so k/v stay expanded)
     SOUP_KERNELS_VERBOSE=1         print why a step falls back to the plain path
 
 The kernels target a Tesla T4 (sm_75): fp16 storage, fp32 math, no bf16.

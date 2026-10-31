@@ -122,6 +122,19 @@ def _scale(p: float) -> torch.Tensor:
     return torch.tensor(1.0, dtype=torch.float32) / torch.tensor(1.0 - p, dtype=torch.float32)
 
 
+_SCALES: dict = {}
+
+
+def _scale_on(p: float, device: torch.device) -> torch.Tensor:
+    """`_scale(p)` on `device`, copied there once: a host-to-device copy waits for the GPU to
+    finish its queue, and the LoRA backward needs the scale 56 times a step (q and v, 28 layers)."""
+    key = (float(p), device)
+    scale = _SCALES.get(key)
+    if scale is None:
+        scale = _SCALES[key] = _scale(p).to(device)
+    return scale
+
+
 def _dropout_with_mask(x: torch.Tensor, p: float):
     """(F.dropout(x, p, training=True), keep mask), drawing the same random numbers."""
     if x.is_cuda:
@@ -228,7 +241,7 @@ class LoraRematFunction(torch.autograd.Function):
         dx16 = da.mm(a16_w) if ctx.needs_input_grad[0] else None
         _, x32, _ = _norm_fwd(resid, None, norm_weight, ctx.eps)
         if keep is not None:
-            x16, grad_x = dropout_backward(x32, dx16, keep, _scale(ctx.p).to(x32.device))
+            x16, grad_x = dropout_backward(x32, dx16, keep, _scale_on(ctx.p, x32.device))
         else:
             x16, grad_x = x32.to(torch.float16), (None if dx16 is None
                                                   else dx16.to(torch.float32))
@@ -273,7 +286,7 @@ def dropout_self_check(device: torch.device, p: float, n_cols: int = 4096) -> Op
             torch.manual_seed(1234)
             out, mask = _dropout_with_mask(x, p)
             after_ours = torch.rand(8, device=device)
-            scale = _scale(p).to(device)
+            scale = _scale_on(p, device)  # the tensor the LoRA backward will use
             zero = torch.zeros((), device=device)
             if not torch.equal(out, ref.detach()):
                 problem = "output differs"

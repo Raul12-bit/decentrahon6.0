@@ -236,15 +236,22 @@ def test_lora_remat_bit_identical_on_gpu(pads, packed, monkeypatch):
     _lora_remat_against_peft("cuda", pads, packed, monkeypatch)
 
 
-def test_enable_gqa_check_passes_on_gpu():
+def test_enable_gqa_check_on_gpu():
     """Per-row attention with enable_gqa: forward and backward against expanded k/v, on the real
-    head layout, and not on the math backend."""
+    head layout, and not on the math backend. On a T4 (sm_75) the only fused SDPA kernel is the
+    memory-efficient one, which does not take fewer k/v heads than query heads (flash and cuDNN
+    need sm_80): there the check must reject enable_gqa, and per-row attention keeps k/v
+    expanded."""
     from transformers import Qwen2Config
 
     from solution.patches.patch_qwen import _gqa_problem
 
     config = Qwen2Config(hidden_size=1536, num_attention_heads=12, num_key_value_heads=2)
-    assert _gqa_problem(config, torch.device("cuda")) is None
+    problem = _gqa_problem(config, torch.device("cuda"))
+    if torch.cuda.get_device_capability() < (8, 0):
+        assert problem == "enable_gqa falls back to the math backend"
+    else:
+        assert problem is None
 
 
 def test_fp16_swiglu():

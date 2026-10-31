@@ -582,6 +582,16 @@ def test_lora_dropout_self_check_passes_and_keeps_rng():
     assert lora.STATE["enabled"]
 
 
+def test_dropout_scale_reaches_the_device_once():
+    """The LoRA backward takes dropout's scale from a cache: a fresh host-to-device copy in every
+    backward would make the GPU stream drain 56 times a step."""
+    from solution.kernels import lora
+
+    first = lora._scale_on(0.05, torch.device("cpu"))
+    assert lora._scale_on(0.05, torch.device("cpu")) is first
+    assert torch.equal(first, lora._scale(0.05))
+
+
 def test_per_row_attention_only_for_right_padding():
     """Per-row attention is exact only when each row is [1 ... 1, 0 ... 0]; anything else
     (left padding, holes) must keep base's masked attention."""

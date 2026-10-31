@@ -78,26 +78,26 @@ transformers 5.16.1, peft 0.20.0 и bitsandbytes 0.50.2 показал три п
 
 ```mermaid
 flowchart TB
-    IN["батч: 4 строки × до 512 токенов"] --> UNPAD["убираем pad: остаются T реальных токенов"]
-    UNPAD --> EMB["эмбеддинг: таблица в fp16, строки в fp32"]
-    EMB --> LAYER
-    subgraph LAYER["28 слоёв декодера"]
+    IN["батч 4 × ≤ 512 токенов → убираем pad → эмбеддинг из fp16-таблицы"] --> ATT
+    subgraph LAYER["× 28 слоёв декодера"]
         direction TB
-        N1["остаток + RMSNorm<br/>⚡ _add_rmsnorm_fwd_kernel"] --> QKV["q / k / v: распаковка NF4 + cuBLAS<br/>⚡ _nf4_dequant_nested_kernel"]
-        QKV --> LORA["LoRA на q / v: маска dropout битами<br/>⚡ _dropout_mask_pack_kernel"]
-        LORA --> ROPE["сложение LoRA + RoPE → fp16<br/>⚡ _rope_lora_scatter_fwd_kernel"]
-        ROPE --> ATTN["SDPA по каждой строке отдельно<br/>causal, без pad"]
-        ATTN --> O["o_proj: NF4 + cuBLAS"]
-        O --> MLP["остаток + RMSNorm + gate/up + SwiGLU<br/>⚡ _add_rmsnorm_fwd_kernel, _swiglu_fp16_fwd_kernel"]
-        MLP --> DOWN["down_proj: NF4 + cuBLAS"]
+        subgraph ATT["attention"]
+            direction LR
+            N1["остаток +<br/>RMSNorm ⚡"] --> QKV["q · k · v<br/>NF4 ⚡ + cuBLAS"] --> R["LoRA + RoPE ⚡<br/>маски битами ⚡"] --> S["SDPA<br/>по строкам"] --> O["o_proj<br/>NF4 ⚡ + cuBLAS"]
+        end
+        subgraph MLP["MLP"]
+            direction LR
+            M["остаток + RMSNorm ⚡<br/>gate · up: NF4 ⚡ + cuBLAS"] --> SW["SwiGLU ⚡"] --> D["down_proj<br/>NF4 ⚡ + cuBLAS"]
+        end
+        ATT --> MLP
     end
-    LAYER --> NORM["финальная RMSNorm ⚡"]
-    NORM --> CE["lm_head + loss кусками по 256 токенов<br/>⚡ _cross_entropy_fwd_bwd_inplace_kernel<br/>логитов [B, S, V] нет вообще"]
+    MLP --> OUT["финальная RMSNorm ⚡ → lm_head + loss кусками по 256 токенов ⚡, логитов [B, S, V] нет"]
 ```
 
-В backward работают парные кернелы (`_add_rmsnorm_bwd_kernel`, `_rope_gather_bwd_kernel`,
-`_dropout_bits_bwd_kernel`, `_swiglu_fp16_bwd_inplace_kernel`), веса NF4 распаковываются заново
-вместо хранения плотной копии, а градиент по логитам уже посчитан в forward.
+⚡ — наш Triton-кернел (имена — в таблице ниже). В backward работают парные кернелы
+(`_add_rmsnorm_bwd_kernel`, `_rope_gather_bwd_kernel`, `_dropout_bits_bwd_kernel`,
+`_swiglu_fp16_bwd_inplace_kernel`), веса NF4 распаковываются заново вместо хранения плотной копии,
+а градиент по логитам уже посчитан в forward.
 
 ### Наши кернелы
 

@@ -287,12 +287,27 @@ def dropout_self_check(device: torch.device, p: float, n_cols: int = 4096) -> Op
                 problem = None
             if problem is None:
                 _check_bits(mask, x, g, scale)
+                _check_padded_layout(x, p)
     except Exception as exc:  # noqa: BLE001
         problem = f"check raised {exc!r}"
     if problem is not None:
         STATE["enabled"] = False
         _runtime.log(f"LoRA input rematerialization off: dropout check: {problem}")
     return problem
+
+
+def _check_padded_layout(x, p) -> None:
+    """Base draws its masks on [B, S, H], the fast path on the flat [B * S, H]: same keep mask?
+    Only logged: every dropout of the fast path uses the flat layout, so this says whether the
+    masks are base's, not whether rematerialization is exact (test_kernels.py asserts it)."""
+    rows = x.repeat(2, 1)
+    torch.manual_seed(77)
+    ref = F.dropout(rows.reshape(2, x.shape[0], x.shape[1]), p, True)
+    torch.manual_seed(77)
+    flat, _ = _dropout_with_mask(rows, p)
+    STATE["layout"] = torch.equal(flat, ref.reshape(rows.shape))
+    if not STATE["layout"]:
+        _runtime.log("LoRA dropout masks on [B * S, H] differ from base's [B, S, H]")
 
 
 def _check_bits(mask, x, g, scale) -> None:

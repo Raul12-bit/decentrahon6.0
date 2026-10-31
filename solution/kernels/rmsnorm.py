@@ -103,6 +103,9 @@ def _norm_fwd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.
     """(resid + delta, out_dtype(RMSNorm(resid + delta)), rstd). With out_dtype fp16 the
     normalized row is computed in fp32 and rounded once: the value base gets from casting its
     fp32 norm output to fp16 for the next GEMM."""
+    # The kernels address rows as row * n_cols: no copy for the contiguous tensors training has.
+    resid, weight = resid.contiguous(), weight.contiguous()
+    delta = None if delta is None else delta.contiguous()
     n_rows, n_cols = resid.shape
     y = torch.empty_like(resid, dtype=out_dtype)
     rstd = torch.empty(n_rows, dtype=torch.float32, device=resid.device)
@@ -123,6 +126,7 @@ def _norm_fwd(resid: torch.Tensor, delta: Optional[torch.Tensor], weight: torch.
 
 
 def _norm_bwd(dy, dres, x, weight, rstd, with_delta: bool):
+    x, weight = x.contiguous(), weight.contiguous()
     n_rows, n_cols = x.shape
     dx = torch.empty_like(x)
     ddelta = torch.empty(x.shape, dtype=torch.float16, device=x.device) if with_delta else None

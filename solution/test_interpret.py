@@ -342,6 +342,146 @@ def test_fast_path_phase4_changes_no_bit(tiny_qlora_qwen2, monkeypatch):
         assert torch.equal(g_old, g_new), float((g_old - g_new).abs().max())
 
 
+def test_fast_path_enable_gqa_matches_expanded_kv(tiny_qlora_qwen2, monkeypatch):
+    """k/v read as they are (enable_gqa) against k/v expanded to the query heads: the same loss
+    and RNG stream, LoRA gradients within fp16 rounding (dk, dv are one fp16 sum, not several)."""
+    from solution import _runtime
+    from solution.patches import patch_qwen as pm
+
+    model, vocab = tiny_qlora_qwen2
+    monkeypatch.setitem(pm._GQA, "ok", True)
+    torch.manual_seed(13)
+    batch, seq = 3, 24
+    ids = torch.randint(0, vocab, (batch, seq))
+    attn = torch.ones(batch, seq, dtype=torch.long)
+    attn[1, 15:] = 0
+    attn[2, 1:] = 0  # a one-token row
+    labels = ids.clone()
+    labels[attn == 0] = -100
+    params = [p for p in model.parameters() if p.requires_grad]
+    real_sdpa = torch.nn.functional.scaled_dot_product_attention
+    seen = []
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("enable_gqa", False))
+        return real_sdpa(*args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", spy)
+
+    def run(gqa):
+        monkeypatch.setattr(_runtime, "GQA_ATTN", gqa)
+        seen.clear()
+        for p in params:
+            p.grad = None
+        torch.manual_seed(321)
+        request = pm._StepRequest(None)
+        pm._REQUEST = request
+        try:
+            with torch.autocast("cpu", dtype=torch.float16):
+                out = model(input_ids=ids, attention_mask=attn, labels=labels, use_cache=False)
+        finally:
+            pm._REQUEST = None
+        out.loss.backward()
+        assert request.result is not None, "the fast path did not run"
+        assert seen and all(flag is gqa for flag in seen)
+        return out.loss.detach(), [p.grad.detach().clone() for p in params], torch.rand(4)
+
+    old_loss, old_grads, old_rng = run(False)
+    new_loss, new_grads, new_rng = run(True)
+    torch.testing.assert_close(new_loss, old_loss, rtol=1e-5, atol=1e-5)
+    assert torch.equal(old_rng, new_rng)
+    for g_old, g_new in zip(old_grads, new_grads):
+        rel = (g_old - g_new).norm() / g_old.norm().clamp(min=1e-12)
+        assert rel < 1e-2, float(rel)
+
+
+def test_gqa_check_passes_and_keeps_rng():
+    from transformers import Qwen2Config
+
+    from solution.patches.patch_qwen import _gqa_problem
+
+    config = Qwen2Config(hidden_size=HIDDEN, num_attention_heads=HEADS,
+                         num_key_value_heads=KV_HEADS)
+    torch.manual_seed(5)
+    before = torch.get_rng_state()
+    assert _gqa_problem(config, torch.device("cpu")) is None
+    assert torch.equal(torch.get_rng_state(), before), "the check must not move the RNG"
+
+
+def test_failed_gqa_check_keeps_expanded_kv(monkeypatch):
+    """A failed check loses the memory saving only: the fast path goes on with expanded k/v."""
+    from solution.patches import patch_qwen as pm
+
+    monkeypatch.setitem(pm._GQA, "ok", True)
+    monkeypatch.setitem(pm._GQA, "checked", False)
+    monkeypatch.setattr(pm, "_gqa_problem", lambda config, device: "simulated")
+    assert pm._gqa_enabled(HEAD_DIM)
+    assert pm._check_gqa_attention(None, torch.device("cpu")) == "simulated"
+    assert not pm._gqa_enabled(HEAD_DIM)
+
+
+def test_full_dropout_stays_on_peft_path():
+    """p == 1 zeroes the input; treating it as no dropout would train on the wrong LoRA input."""
+    from types import SimpleNamespace
+
+    from solution.patches.patch_qwen import _remat_dropout_p
+
+    linear = torch.nn.Linear(4, 4, bias=False)
+    padded = SimpleNamespace(norm_state=(None,))
+    drop = torch.nn.Dropout(1.0).train()
+    assert _remat_dropout_p(linear, linear, drop, padded) is None
+    assert _remat_dropout_p(linear, linear, torch.nn.Dropout(0.05).train(), padded) == 0.05
+    assert _remat_dropout_p(linear, linear, torch.nn.Dropout(0.05).eval(), padded) == 0.0
+    assert _remat_dropout_p(linear, linear, torch.nn.Dropout(0.0).train(), padded) == 0.0
+
+
+def test_kernels_accept_non_contiguous_inputs():
+    """The kernels address memory linearly; the wrappers must hand them contiguous tensors, or a
+    strided input silently reads the wrong rows."""
+    from solution.kernels.rmsnorm import add_rmsnorm, ref_add_rmsnorm
+    from solution.kernels.rope import ref_rope, rope_lora_scatter
+    from solution.kernels.swiglu import swiglu, swiglu_fwd
+
+    weight = (torch.rand(2 * HIDDEN) + 0.5)[::2]
+    resid = torch.randn(12, HIDDEN)[::2].requires_grad_(True)
+    delta = torch.randn(12, HIDDEN).half()[::2].requires_grad_(True)
+    assert not resid.is_contiguous() and not weight.is_contiguous()
+    new_resid, y = add_rmsnorm(resid, delta, weight, 1e-6)
+    ref_resid, ref_y = ref_add_rmsnorm(resid.detach(), delta.detach(), weight, 1e-6)
+    torch.testing.assert_close(new_resid, ref_resid, rtol=0, atol=0)
+    torch.testing.assert_close(y, ref_y, rtol=1e-5, atol=1e-5)
+    y.sum().backward()
+    r2 = resid.detach().contiguous().requires_grad_(True)
+    ref_add_rmsnorm(r2, delta.detach(), weight, 1e-6)[1].sum().backward()
+    torch.testing.assert_close(resid.grad, r2.grad, rtol=1e-4, atol=1e-4)
+
+    g = (torch.randn(10, 64) * 2).half()[::2].requires_grad_(True)
+    u = torch.randn(10, 64).half()[::2].requires_grad_(True)
+    ref = (torch.nn.functional.silu(g.detach().float()) * u.detach().float()).half()
+    torch.testing.assert_close(swiglu_fwd(g.detach(), u.detach()).float(), ref.float(),
+                               rtol=2e-3, atol=2e-3)
+    swiglu(g, u).sum().backward()
+    assert torch.isfinite(g.grad).all() and torch.isfinite(u.grad).all()
+
+    heads, seq = KV_HEADS, 5
+    base = torch.randn(2 * seq, heads * HEAD_DIM).half()[::2].requires_grad_(True)
+    assert not base.is_contiguous()
+    table = torch.randn(seq, HEAD_DIM)
+    cos, sin = table.cos(), table.sin()
+    rows = torch.arange(seq)
+    out = rope_lora_scatter(base, None, cos, sin, rows, rows, 1, seq, heads, True, 16)
+    x = base.detach().float().view(seq, heads, HEAD_DIM)
+    want = ref_rope(x, cos[:, None], sin[:, None]).half().permute(1, 0, 2)
+    torch.testing.assert_close(out[0], want, rtol=1e-3, atol=1e-3)
+
+
+def test_dropout_self_check_records_the_flat_layout():
+    from solution.kernels import lora
+
+    assert lora.dropout_self_check(torch.device("cpu"), 0.05, 256) is None
+    assert lora.STATE["layout"]
+
+
 def test_dropout_mask_bits_kernels():
     """Packing the rows of the real tokens out of the padded mask, then the backward's
     unpack + masked scale, against the bool mask and torch.where: bit for bit."""

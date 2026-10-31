@@ -63,6 +63,7 @@ def _kernels_ok(*tensors: torch.Tensor) -> bool:
 
 
 def swiglu_fwd(g: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+    g, u = g.contiguous(), u.contiguous()  # the kernels address the elements linearly
     p = torch.empty_like(g)
     n = g.numel()
     if _kernels_ok(g) and n:
@@ -75,8 +76,9 @@ def swiglu_fwd(g: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
 
 
 def swiglu_bwd_inplace(dp: torch.Tensor, g: torch.Tensor, u: torch.Tensor):
-    """Overwrites g with dL/dg and u with dL/du (fp16), returns them."""
-    dp = dp.contiguous()
+    """Overwrites g with dL/dg and u with dL/du (fp16), returns them. Non-contiguous g or u are
+    copied first, so use the returned tensors."""
+    dp, g, u = dp.contiguous(), g.contiguous(), u.contiguous()
     n = g.numel()
     if _kernels_ok(g) and n:
         _swiglu_fp16_bwd_inplace_kernel[(triton.cdiv(n, SWIGLU_BLOCK),)](

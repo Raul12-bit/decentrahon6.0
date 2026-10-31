@@ -50,6 +50,8 @@ from ..kernels.swiglu import swiglu
 STEP_ATTR = "_soup_chunked_step"  # soup_cli.utils.stream_loss_chunk.STEP_ATTR
 _ORIGINALS: dict[str, Any] = {}
 _REQUEST: Optional["_StepRequest"] = None
+# Turned off by `_check_gqa_attention` if this device's SDPA with enable_gqa does not match.
+_GQA = {"ok": True, "checked": False}
 
 
 class _StepRequest:
@@ -195,7 +197,10 @@ def _remat_dropout_p(lora_a, lora_b, dropout, padded) -> Optional[float]:
         return 0.0
     if type(dropout) is not torch.nn.Dropout:
         return None
-    return float(dropout.p) if dropout.training and 0.0 < dropout.p < 1.0 else 0.0
+    if not dropout.training or dropout.p == 0.0:
+        return 0.0
+    # p == 1 zeroes the whole input: that is not "no dropout", so it stays on peft's path.
+    return float(dropout.p) if dropout.p < 1.0 else None
 
 
 def _attention(attn, x32, ctx: _LayerCtx, norm_state=None):
@@ -238,9 +243,12 @@ def _varlen_attention(attn, ctx: _LayerCtx, q_base, q_lora, k_base, k_lora, v_ba
 
     The RoPE kernel writes q/k/v token-major, [1, heads, T, D] (batch 1, "sequence" = the T real
     tokens in row order, each rotated at its own position s via cos_row); `split` hands each row
-    a view without a copy, and its backward concatenates the row gradients in one pass. k/v are
-    expanded to the query heads with transformers' repeat_kv, as the masked SDPA path of base
-    does. The per-row outputs are concatenated in row order: the [T, H * D] rows o_proj reads.
+    a view without a copy, and its backward concatenates the row gradients in one pass. k/v go
+    to SDPA as they are with `enable_gqa` (no expanded copies to keep: -5 KB per token per layer;
+    transformers takes the same route when there is no mask and head_dim <= 256), or, if that is
+    switched off or failed `_check_gqa_attention`, expanded with transformers' repeat_kv as the
+    masked SDPA path of base does. The per-row outputs are concatenated in row order: the
+    [T, H * D] rows o_proj reads.
     """
     import torch.nn.functional as F
     from transformers.models.qwen2 import modeling_qwen2 as mq
@@ -252,15 +260,88 @@ def _varlen_attention(attn, ctx: _LayerCtx, q_base, q_lora, k_base, k_lora, v_ba
     k = rope_lora_scatter(k_base, k_lora, *common, n_kv, True, ctx.block_heads)
     v = rope_lora_scatter(v_base, v_lora, *common, n_kv, False, ctx.block_heads)
     groups = n_heads // n_kv
+    gqa = groups > 1 and _gqa_enabled(head_dim)
+    sdpa_kwargs = {"enable_gqa": True} if gqa else {}
     outs = []
     for qi, ki, vi in zip(q.split(ctx.row_lengths, dim=2), k.split(ctx.row_lengths, dim=2),
                           v.split(ctx.row_lengths, dim=2)):
-        if groups > 1:
+        if groups > 1 and not gqa:
             ki, vi = mq.repeat_kv(ki, groups), mq.repeat_kv(vi, groups)
         oi = F.scaled_dot_product_attention(qi, ki, vi, dropout_p=0.0, is_causal=True,
-                                            scale=attn.scaling)
+                                            scale=attn.scaling, **sdpa_kwargs)
         outs.append(oi.transpose(1, 2).reshape(qi.shape[2], n_heads * head_dim))
     return torch.cat(outs, dim=0) if len(outs) > 1 else outs[0]
+
+
+def _gqa_enabled(head_dim: int) -> bool:
+    return _runtime.GQA_ATTN and _GQA["ok"] and head_dim <= 256
+
+
+def _gqa_problem(config, device) -> Optional[str]:
+    """None if SDPA with enable_gqa matches the expanded k/v path on this device, forward and
+    backward, without falling back to the math backend (which keeps the attention matrix)."""
+    from transformers.models.qwen2 import modeling_qwen2 as mq
+
+    n_heads, n_kv = int(config.num_attention_heads), int(config.num_key_value_heads)
+    head_dim = int(getattr(config, "head_dim", None) or config.hidden_size // n_heads)
+    groups = n_heads // n_kv
+    if groups <= 1:
+        return None
+    seq, scaling = 5, head_dim ** -0.5
+
+    def pattern(heads, phase):
+        # Fixed, non-random values: this must not touch torch's RNG state.
+        n = torch.arange(heads * seq * head_dim, device=device, dtype=torch.float32)
+        return torch.sin(n * phase).reshape(1, heads, seq, head_dim).to(torch.float16)
+
+    q0, k0, v0 = pattern(n_heads, 0.37), pattern(n_kv, 0.73), pattern(n_kv, 0.91)
+    seed_grad = pattern(n_heads, 0.11)
+
+    def run(gqa):
+        q, k, v = (t.clone().requires_grad_(True) for t in (q0, k0, v0))
+        ki, vi = (k, v) if gqa else (mq.repeat_kv(k, groups), mq.repeat_kv(v, groups))
+        try:
+            backend = int(torch._fused_sdp_choice(q, ki, vi, None, 0.0, True, scale=scaling,
+                                                  enable_gqa=gqa))
+        except Exception:  # noqa: BLE001 - a private call, only for the fallback check and the log
+            backend = None
+        kwargs = {"enable_gqa": True} if gqa else {}
+        out = F.scaled_dot_product_attention(q, ki, vi, dropout_p=0.0, is_causal=True,
+                                             scale=scaling, **kwargs)
+        out.backward(seed_grad)
+        return backend, out.detach(), q.grad, k.grad, v.grad
+
+    with torch.enable_grad(), torch.autocast(device_type=device.type, enabled=False):
+        expanded, native = run(False), run(True)
+    _runtime.log(f"SDPA backend per row (0 math, 1 flash, 2 memory-efficient): expanded "
+                 f"{expanded[0]}, gqa {native[0]}")
+    if native[0] == 0 and expanded[0] != 0:
+        return "enable_gqa falls back to the math backend"
+    # Output and dq are the same math; dk / dv are one fp16 sum instead of several, so they may
+    # differ at the level of fp16 rounding.
+    for name, want, got in zip(("output", "dq", "dk", "dv"), expanded[1:], native[1:]):
+        want, got = want.float(), got.float()
+        rel = (got - want).norm() / want.norm().clamp(min=1e-12)
+        if not torch.isfinite(rel) or rel > 1e-2:
+            return f"{name} differs by {float(rel):.2e}"
+    return None
+
+
+def _check_gqa_attention(config, device) -> Optional[str]:
+    """Before training, on this device: can per-row attention use enable_gqa? If not, k/v stay
+    expanded (some memory lost, the fast path kept): no training step may be the first to find
+    out, because a failure in backward could not fall back."""
+    if not _runtime.GQA_ATTN or _GQA["checked"]:
+        return None
+    _GQA["checked"] = True
+    try:
+        problem = _gqa_problem(config, device)
+    except Exception as exc:  # noqa: BLE001
+        problem = f"check raised {exc!r}"
+    if problem is not None:
+        _GQA["ok"] = False
+        _runtime.log(f"per-row attention keeps expanded k/v: {problem}")
+    return problem
 
 
 def _post_attention(layer, resid, attn_out):
@@ -661,6 +742,7 @@ def apply_t4_triton_patches(model) -> dict:
         problems = ensure_checked(lm.config, lm.lm_head.weight.device)
         if not problems:
             _check_lora_dropout(model, lm.lm_head.weight.device)
+            _check_gqa_attention(lm.config, lm.lm_head.weight.device)
         if problems:
             restore_t4_triton_patches(model)
             report["fp16_table"] = False

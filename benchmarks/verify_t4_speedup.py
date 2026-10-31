@@ -42,19 +42,21 @@ sys.path.insert(0, str(REPO / "harness"))
 # The experiment matrix of --matrix: one optimization switched off at a time against the
 # defaults (all on), plus the previous phase's configuration.
 MATRIX = {
-    "default": {},  # phase 4: every switch on
+    "default": {},  # every switch on
+    "no_gqa": {"SOUP_KERNELS_GQA_ATTN": "0"},  # = phase 4
     "no_packed_masks": {"SOUP_KERNELS_PACKED_MASKS": "0"},
     "no_resid_delta": {"SOUP_KERNELS_RESID_DELTA": "0"},
     "restore_table": {"SOUP_KERNELS_RESTORE_TABLE": "1"},
     "phase3": {"SOUP_KERNELS_PACKED_MASKS": "0", "SOUP_KERNELS_RESID_DELTA": "0",
-               "SOUP_KERNELS_RESTORE_TABLE": "1"},
+               "SOUP_KERNELS_RESTORE_TABLE": "1", "SOUP_KERNELS_GQA_ATTN": "0"},
     "no_varlen_attn": {"SOUP_KERNELS_VARLEN_ATTN": "0"},
     "no_fused_mlp_norm": {"SOUP_KERNELS_FUSED_MLP_NORM": "0"},
     "no_lora_remat": {"SOUP_KERNELS_LORA_REMAT": "0"},
     "no_mlp_recompute": {"SOUP_KERNELS_MLP_RECOMPUTE": "0"},
     "phase1": {"SOUP_KERNELS_VARLEN_ATTN": "0", "SOUP_KERNELS_FUSED_MLP_NORM": "0",
                "SOUP_KERNELS_LORA_REMAT": "0", "SOUP_KERNELS_PACKED_MASKS": "0",
-               "SOUP_KERNELS_RESID_DELTA": "0", "SOUP_KERNELS_RESTORE_TABLE": "1"},
+               "SOUP_KERNELS_RESID_DELTA": "0", "SOUP_KERNELS_RESTORE_TABLE": "1",
+               "SOUP_KERNELS_GQA_ATTN": "0"},
 }
 
 

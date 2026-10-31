@@ -33,6 +33,9 @@ reproduced (or bisected on Kaggle) without editing code:
     SOUP_KERNELS_RESTORE_TABLE=1   rebuild the fp32 embedding table when training ends (default
                                    0: Soup only saves the adapter after training, and the fresh
                                    890 MiB block at that point raised the measured peak)
+    SOUP_KERNELS_GQA_ATTN=0        per-row attention expands k/v to the query heads (default 1:
+                                   SDPA reads them as they are with enable_gqa, if a check on
+                                   the device passes; -5 KB per token per layer)
     SOUP_KERNELS_VERBOSE=1         print why a step falls back to the plain path
 
 The kernels target a Tesla T4 (sm_75): fp16 storage, fp32 math, no bf16.
@@ -70,6 +73,7 @@ LORA_REMAT = _flag("SOUP_KERNELS_LORA_REMAT", True)
 PACKED_MASKS = _flag("SOUP_KERNELS_PACKED_MASKS", True)
 RESID_DELTA = _flag("SOUP_KERNELS_RESID_DELTA", True)
 RESTORE_TABLE = _flag("SOUP_KERNELS_RESTORE_TABLE", False)
+GQA_ATTN = _flag("SOUP_KERNELS_GQA_ATTN", True)
 CE_CHUNK = max(16, _int("SOUP_KERNELS_CE_CHUNK", 256))
 VERBOSE = _flag("SOUP_KERNELS_VERBOSE", False)
 # Only for the kernel tests on a machine without a GPU: TRITON_INTERPRET=1 runs the

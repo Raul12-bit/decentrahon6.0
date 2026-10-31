@@ -135,6 +135,10 @@ class RopeLoraScatterFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, base, lora, cos, sin, cos_row, dst, batch, seq, n_heads, rotate,
                 block_heads):
+        # The kernel addresses tokens as t * n_heads * D: no copy for the tensors training has.
+        base = base.contiguous()
+        lora = None if lora is None else lora.contiguous()
+        cos_row, dst = cos_row.contiguous(), dst.contiguous()
         n_tok = base.shape[0]
         head_dim = cos.shape[-1]
         cos2 = cos.reshape(-1, head_dim).contiguous()

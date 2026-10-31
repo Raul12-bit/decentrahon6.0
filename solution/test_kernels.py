@@ -164,6 +164,89 @@ def test_dropout_mask_bits_on_gpu():
     assert lora.STATE["packed"]
 
 
+def test_dropout_flat_layout_draws_base_masks():
+    """Base's LoRA dropout runs on [B, S, H], the fast path's on the flat [B * S, H]. The README's
+    claim that both keep the same elements rests on this: CUDA's dropout kernel, same seed."""
+    from solution.kernels import lora
+
+    x = torch.ones(4 * 37, 1536, device="cuda")
+    torch.manual_seed(5)
+    ref = torch.nn.functional.dropout(x.reshape(4, 37, 1536), 0.05, True)
+    torch.manual_seed(5)
+    flat, _ = lora._dropout_with_mask(x, 0.05)
+    assert torch.equal(flat, ref.reshape(x.shape))
+
+
+def _lora_remat_against_peft(device, pads, packed, monkeypatch):
+    """kernels/lora.py against peft's lora_B(lora_A(dropout(x))) * scaling under fp16 autocast, on
+    `device` (compiled kernels on a GPU, where FMA is possible): output, dA, dB, the gradient of
+    the residual and the RNG advance, bit for bit."""
+    from types import SimpleNamespace
+
+    from solution import _runtime
+    from solution.kernels.lora import lora_remat
+    from solution.kernels.rmsnorm import add_rmsnorm_rstd
+
+    monkeypatch.setattr(_runtime, "PACKED_MASKS", packed)
+    hidden, rank, scaling, p, eps = 1536, 16, 2.0, 0.05, 1e-6
+    batch, seq = 3, 37
+    attn = torch.ones(batch, seq, dtype=torch.long, device=device)
+    if pads:
+        attn[1, 20:] = 0
+        attn[2, 5:] = 0
+    dst = attn.reshape(-1).nonzero().squeeze(1)
+    n_tok = dst.numel()
+    torch.manual_seed(0)
+    resid0 = torch.randn(n_tok, hidden, device=device)
+    delta = torch.randn(n_tok, hidden, device=device).half()
+    norm_w = torch.rand(hidden, device=device) + 0.5
+    a0 = torch.randn(rank, hidden, device=device) * 0.02
+    b0 = torch.randn(hidden, rank, device=device) * 0.02
+    grad_out = torch.randn(n_tok, hidden, device=device).half()
+
+    def padded_of(x32):
+        return x32.new_zeros((batch * seq, hidden)).index_copy(0, dst, x32)
+
+    results = []
+    for ours in (False, True):
+        r = resid0.clone().requires_grad_(True)
+        a, b = a0.clone().requires_grad_(True), b0.clone().requires_grad_(True)
+        resid, x32, rstd = add_rmsnorm_rstd(r, delta, norm_w, eps)
+        torch.manual_seed(99)
+        if ours:
+            layout = SimpleNamespace(full=not pads, dst=dst, padded=lambda: padded_of(x32.detach()))
+            out = lora_remat(x32, a, b, resid, rstd, norm_w, eps, scaling, p, layout)
+        else:
+            source = padded_of(x32) if pads else x32
+            dropped = torch.nn.functional.dropout(source, p, True)
+            dropped = dropped.index_select(0, dst) if pads else dropped
+            with torch.autocast(device, dtype=torch.float16):
+                out = torch.nn.functional.linear(torch.nn.functional.linear(dropped, a), b) * scaling
+        rng_after = torch.rand(4, device=device)
+        out.backward(grad_out)
+        results.append((out.detach(), a.grad, b.grad, r.grad, rng_after))
+    for name, ref, got in zip(("out", "dA", "dB", "dresid", "rng"), results[0], results[1]):
+        assert ref.dtype == got.dtype, name
+        assert torch.equal(ref, got), f"{name}: max diff {(ref.float() - got.float()).abs().max()}"
+
+
+@pytest.mark.parametrize("pads", [False, True])
+@pytest.mark.parametrize("packed", [True, False])
+def test_lora_remat_bit_identical_on_gpu(pads, packed, monkeypatch):
+    _lora_remat_against_peft("cuda", pads, packed, monkeypatch)
+
+
+def test_enable_gqa_check_passes_on_gpu():
+    """Per-row attention with enable_gqa: forward and backward against expanded k/v, on the real
+    head layout, and not on the math backend."""
+    from transformers import Qwen2Config
+
+    from solution.patches.patch_qwen import _gqa_problem
+
+    config = Qwen2Config(hidden_size=1536, num_attention_heads=12, num_key_value_heads=2)
+    assert _gqa_problem(config, torch.device("cuda")) is None
+
+
 def test_fp16_swiglu():
     from solution.kernels.swiglu import swiglu
 

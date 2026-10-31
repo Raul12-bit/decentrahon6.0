@@ -13,11 +13,12 @@ Every Triton kernel and PyTorch modification MUST strictly obey T4 hardware limi
    - Keep tile sizes conservative: `BLOCK_M=64`, `BLOCK_N=64`, `BLOCK_K=32` (or `BLOCK_SIZE=1024..2048` for 1D reductions).
    - Keep `num_stages=1` or `num_stages=2` (higher stages cause `triton.runtime.OutOfResources` or severe register spilling).
    - Default to `num_warps=4` (or `8` for wide row reductions like vocabulary softmax).
-3. **Memory Bandwidth Bound (300 GB/s GDDR6 & PCIe Gen3):** T4 is heavily memory-bandwidth constrained. Fuse elementwise, normalization, rotary, activation, and dequantization operations to minimize global HBM round-trips.
+3. **Memory Bandwidth Bound (320 GB/s GDDR6 & PCIe Gen3):** T4 has GDDR6, not HBM, and is heavily memory-bandwidth constrained. Fuse elementwise, normalization, rotary, activation, and dequantization operations to minimize global memory round-trips.
 
 ---
 
 ## 3. Repository Architecture Map
+Everything of ours lives in `solution/` (see README.md); `harness/`, `task/` and `tests/` are the jury's and must not change. The paths below are in the upstream Soup source (installed package `soup_cli`), for reference:
 - `src/soup_cli/utils/layer_stream_runtime.py`: Core engine for `stream_layers: true`. Contains `LayerStreamRuntime`, `StreamedDecoderLayer`, `StreamedLargeLayer`, NF4 weight packing/unpacking, and dual CUDA stream prefetching (`_prefetch_stream`).
 - `src/soup_cli/trainer/`: Training loops (`sft.py`, `dpo.py`, `grpo.py`, etc.), model initialization, PEFT/LoRA wrapping, and loss computation.
 - `src/soup_cli/utils/gpu.py`: Pre-flight VRAM estimation (`estimate_logits_bytes`, activation memory budgets).
@@ -45,10 +46,11 @@ Every Triton kernel and PyTorch modification MUST strictly obey T4 hardware limi
 - **Numerical Equivalence:** Never approximate layers in ways that degrade training loss.
   - All reductions (`sum`, `max`, `logsumexp`, `rstd`) MUST execute in `tl.float32`.
   - Loss reductions across chunks MUST accumulate in `torch.float64` or `torch.float32` and divide by exact valid token count (`labels != -100`).
-- **Unit Testing Requirement:** Every new Triton kernel MUST have a corresponding test in `tests/test_triton_kernels.py` verifying forward output and backward gradients (`dX`, `dW`) against reference PyTorch implementations using `torch.testing.assert_close(atol=1e-2, rtol=1e-2)` for `fp16`.
+- **Unit Testing Requirement:** Every new Triton kernel MUST have a corresponding test in `solution/test_kernels.py` (GPU) and `solution/test_interpret.py` (CPU interpreter) verifying forward output and backward gradients (`dX`, `dW`) against reference PyTorch implementations using `torch.testing.assert_close(atol=1e-2, rtol=1e-2)` for `fp16`. `tests/` must stay the 79 tests of the kit.
 - **Commands to run tests:**
-  - `pytest tests/test_triton_kernels.py -v`
-  - `pytest tests/ -k "not slow"`
+  - `python -m pytest solution -q` (on a GPU)
+  - `TRITON_INTERPRET=1 python -m pytest solution/test_interpret.py -q` (CPU)
+  - `SOUP_APPLY_SOLUTION=1 python -m pytest tests -q`
 
 ---
 

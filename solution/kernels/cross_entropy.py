@@ -50,8 +50,8 @@ except Exception:  # noqa: BLE001 - no Triton: the torch path below is used
 
 IGNORE_INDEX = -100
 # Vocabulary tile per loop iteration: 2048 fp16 logits = 4 KB per row and iteration; with 8 warps
-# that is 8 values per thread for each of the 7 per-lane running vectors (T4: 64 KB of registers
-# per SM partition, no shared memory needed beyond the final reductions).
+# that is 8 values per thread for each of the 5 per-lane running vectors. The T4 binary uses
+# 32 bytes of shared memory (the final reductions), no scratch.
 BLOCK_V = 2048
 NUM_WARPS = 8
 

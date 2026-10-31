@@ -46,7 +46,8 @@
   · файл [`assets/soup_demo.mp4`](assets/soup_demo.mp4) — схема решения, тесты на CPU и прогон на
   Kaggle T4 (pytest, `run_task.py`, `check_rules.py`); озвучка на русском, субтитры —
   [`assets/soup_demo.srt`](assets/soup_demo.srt).
-- **Команда:** Bayrzhan Tanatar (капитан), Almen Magzhan (ИИ-инженер), Sayat Mukhamedzhanov
+- **Презентация (PDF):** https://drive.google.com/file/d/1cyQWeTlgyoH4tdQYNCG_2kvRQGc-Tc1I/view?usp=sharing
+- **Команда DoStar:** Bayrzhan Tanatar (капитан), Almen Magzhan (ИИ-инженер), Sayat Mukhamedzhanov
   (машинное обучение), Ni Raul (софтвер-инженер) — [подробнее](#команда).
 - **Всё решение** — пакет [`solution/`](solution/), подключается одной функцией `solution.apply()`.
 
@@ -465,12 +466,14 @@ templates/                   шаблон Kaggle-ноутбука и SUBMISSION.
 
 ## Команда
 
-| Участник | Роль | GitHub |
-|---|---|---|
-| Bayrzhan Tanatar | капитан | [@baurzhanx22](https://github.com/baurzhanx22) |
-| Almen Magzhan | ИИ-инженер | [@magasigmaff39](https://github.com/magasigmaff39) |
-| Sayat Mukhamedzhanov | машинное обучение | [@lisayatsayt-byte](https://github.com/lisayatsayt-byte) |
-| Ni Raul | софтвер-инженер | [@Raul12-bit](https://github.com/Raul12-bit) |
+**DoStar** — Decentrathon 6.0, кейс Soup Kernel Challenge.
+
+| Участник | Роль | GitHub | Telegram |
+|---|---|---|---|
+| Bayrzhan Tanatar | капитан | [@baurzhanx22](https://github.com/baurzhanx22) | — |
+| Almen Magzhan | ИИ-инженер | [@magasigmaff39](https://github.com/magasigmaff39) | [@magzhan2311](https://t.me/magzhan2311) |
+| Sayat Mukhamedzhanov | машинное обучение | [@lisayatsayt-byte](https://github.com/lisayatsayt-byte) | [@sosossyat](https://t.me/sosossyat) |
+| Ni Raul | софтвер-инженер | [@Raul12-bit](https://github.com/Raul12-bit) | [@rnsq34](https://t.me/rnsq34) |
 
 ## Источники идей
 

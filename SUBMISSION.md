@@ -1,4 +1,4 @@
-# Submission: <team name>
+# Submission: DoStar
 
 ## Links
 - Repository: https://github.com/Raul12-bit/decentrahon6.0 (public).
@@ -16,15 +16,17 @@
 - Demo video (up to 3 minutes, 2:50, Russian narration with subtitles), plays in the browser:
   https://cdn.jsdelivr.net/gh/Raul12-bit/decentrahon6.0@211a969/assets/soup_demo.mp4 (the same
   file in the repository: `assets/soup_demo.mp4`, subtitles `assets/soup_demo.srt`)
-- Presentation: <link>
+- Presentation (PDF): https://drive.google.com/file/d/1cyQWeTlgyoH4tdQYNCG_2kvRQGc-Tc1I/view?usp=sharing
 
 ## Team (up to 4 people)
-| Name | Role | GitHub | Kaggle | Contact (captain) |
+| Name | Role | GitHub | Kaggle | Contact (Telegram) |
 |---|---|---|---|---|
-| Bayrzhan Tanatar | Captain | [baurzhanx22](https://github.com/baurzhanx22) | | <contact> |
-| Almen Magzhan | AI Engineer | [magasigmaff39](https://github.com/magasigmaff39) | | |
-| Sayat Mukhamedzhanov | Machine Learning | [lisayatsayt-byte](https://github.com/lisayatsayt-byte) | [sayatsaytli](https://www.kaggle.com/sayatsaytli) | |
-| Ni Raul | Software Engineer | [Raul12-bit](https://github.com/Raul12-bit) | | |
+| Bayrzhan Tanatar | Captain | [baurzhanx22](https://github.com/baurzhanx22) | | — |
+| Almen Magzhan | AI Engineer | [magasigmaff39](https://github.com/magasigmaff39) | | [@magzhan2311](https://t.me/magzhan2311) |
+| Sayat Mukhamedzhanov | Machine Learning | [lisayatsayt-byte](https://github.com/lisayatsayt-byte) | [sayatsaytli](https://www.kaggle.com/sayatsaytli) | [@sosossyat](https://t.me/sosossyat) |
+| Ni Raul | Software Engineer | [Raul12-bit](https://github.com/Raul12-bit) | | [@rnsq34](https://t.me/rnsq34) |
+
+The captain has no Telegram or e-mail: please reach the team through the members' Telegram above.
 
 ## Our kernels
 | Kernel (`@triton.jit` name) | File | What it replaces | Share of the training time (check 4) |

@@ -5,8 +5,13 @@
 токенов, 64 шага) на бесплатной T4 — быстрее и с меньшим пиком памяти, с тем же адаптером.
 Всё решение — пакет [`solution/`](solution/), подключается одной функцией `solution.apply()`.
 
-- Kaggle-ноутбук (сохранённая версия с результатами): **TODO — ссылка**
-- Финальный коммит: **TODO — ссылка**
+- Kaggle-ноутбук (официальный шаблон `templates/kaggle_notebook.ipynb`, сохранённая версия с
+  результатами): https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission
+- Финальный коммит: последний коммит ветки `main` —
+  https://github.com/Raul12-bit/decentrahon6.0/commits/main (его хэш стоит в `COMMIT` первой
+  ячейки ноутбука и печатается ноутбуком). Код решения в нём тот же, что в официально
+  замеренном коммите [`7817156`](https://github.com/Raul12-bit/decentrahon6.0/commit/7817156);
+  после него менялись только README и SUBMISSION.md.
 
 ## Что сделано и почему
 

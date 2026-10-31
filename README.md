@@ -78,20 +78,23 @@ transformers 5.16.1, peft 0.20.0 и bitsandbytes 0.50.2 показал три п
 
 ```mermaid
 flowchart TB
-    IN["батч 4 × ≤ 512 токенов → убираем pad → эмбеддинг из fp16-таблицы"] --> ATT
-    subgraph LAYER["× 28 слоёв декодера"]
-        direction TB
-        subgraph ATT["attention"]
-            direction LR
-            N1["остаток +<br/>RMSNorm ⚡"] --> QKV["q · k · v<br/>NF4 ⚡ + cuBLAS"] --> R["LoRA + RoPE ⚡<br/>маски битами ⚡"] --> S["SDPA<br/>по строкам"] --> O["o_proj<br/>NF4 ⚡ + cuBLAS"]
-        end
-        subgraph MLP["MLP"]
-            direction LR
-            M["остаток + RMSNorm ⚡<br/>gate · up: NF4 ⚡ + cuBLAS"] --> SW["SwiGLU ⚡"] --> D["down_proj<br/>NF4 ⚡ + cuBLAS"]
-        end
-        ATT --> MLP
+    subgraph IN_G["вход"]
+        direction LR
+        A["батч<br/>4 × ≤ 512 токенов"] --> B["убираем pad<br/>T реальных токенов"] --> C["эмбеддинг<br/>из fp16-таблицы"]
     end
-    MLP --> OUT["финальная RMSNorm ⚡ → lm_head + loss кусками по 256 токенов ⚡, логитов [B, S, V] нет"]
+    subgraph ATT["attention — каждый из 28 слоёв"]
+        direction LR
+        N1["остаток +<br/>RMSNorm ⚡"] --> QKV["q · k · v<br/>NF4 ⚡ + cuBLAS"] --> R["LoRA + RoPE ⚡<br/>маски битами ⚡"] --> S["SDPA<br/>по строкам"] --> O["o_proj<br/>NF4 ⚡ + cuBLAS"]
+    end
+    subgraph MLP_G["MLP — каждый из 28 слоёв"]
+        direction LR
+        M["остаток + RMSNorm ⚡<br/>gate · up: NF4 ⚡"] --> SW["SwiGLU ⚡"] --> D["down_proj<br/>NF4 ⚡ + cuBLAS"]
+    end
+    subgraph OUT_G["выход"]
+        direction LR
+        F["финальная<br/>RMSNorm ⚡"] --> CE["lm_head + loss ⚡<br/>кусками по 256 токенов,<br/>логитов [B, S, V] нет"]
+    end
+    IN_G --> ATT --> MLP_G --> OUT_G
 ```
 
 ⚡ — наш Triton-кернел (имена — в таблице ниже). В backward работают парные кернелы

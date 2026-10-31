@@ -42,7 +42,7 @@
   только документация): https://www.kaggle.com/code/sayatsaytli/soup-kernel-challenge-t4-final —
   все 10 проверок пройдены, ×1,293 / ×5,791 за один повтор. Прежний публичный
   ноутбук фазы 3 (коммит `b21090d`): https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission.
-- **Демо-видео (2:50):** [смотреть в браузере](https://cdn.jsdelivr.net/gh/Raul12-bit/decentrahon6.0@211a969/assets/soup_demo.mp4)
+- **Демо-видео (2:50):** [смотреть в браузере](https://cdn.jsdelivr.net/gh/Raul12-bit/decentrahon6.0@3b8cb7d/assets/soup_demo.mp4)
   · файл [`assets/soup_demo.mp4`](assets/soup_demo.mp4) — схема решения, тесты на CPU и прогон на
   Kaggle T4 (pytest, `run_task.py`, `check_rules.py`); озвучка на русском, субтитры —
   [`assets/soup_demo.srt`](assets/soup_demo.srt).

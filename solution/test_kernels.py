@@ -64,8 +64,12 @@ def test_fused_linear_cross_entropy(rows, vocab, chunk):
 
     torch.testing.assert_close(loss, ref_loss, rtol=1e-5, atol=1e-5)
     labelled = targets != -100
+    # The kernel's logits come from chunk-sized GEMMs, the reference's from one [rows, V] GEMM:
+    # cuBLAS picks another algorithm for another M, so a logit can differ in its last fp16 bit
+    # (seen on a T4: one of 37 token losses off by 1e-3, relative 1.2e-4). The per-token CE is
+    # exact on the same logits (test_interpret.py); here the tolerance is fp16's.
     torch.testing.assert_close(stats.token_loss, torch.where(labelled, ref_ce, 0.0),
-                               rtol=1e-4, atol=1e-4)
+                               rtol=1e-3, atol=2e-3)
     torch.testing.assert_close(stats.token_entropy, ref_entropy, rtol=1e-3, atol=1e-3)
     assert (stats.hits == ref_hits).float().mean() > 0.99  # fp16 GEMM ties may flip one
     assert stats.n_labelled == int(num_items)

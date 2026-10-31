@@ -268,6 +268,12 @@ def main() -> None:
         variants = {"solution": {}}
 
     out = Path(args.out or tempfile.mkdtemp(prefix="soup_bench_")).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    # The runs are offline (HF_HUB_OFFLINE=1, as in the harness): download the model and read
+    # the packages once first, with the harness's own warm-up, so no run fails or pays for it.
+    from run_task import warm_up
+
+    warm_up(out)
     runs = {"base": _run_side("base", args, out)}
     for name, env in variants.items():
         runs[name] = _run_side("solution", args, out, name, env)

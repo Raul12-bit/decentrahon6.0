@@ -696,8 +696,15 @@ def _store_table_fp16(lm) -> bool:
         return False
     with torch.no_grad():
         half = weight.detach().to(torch.float16)
-        if not torch.equal(half.to(torch.float32), weight.detach()):
-            return False
+        # fp16 -> fp32 must give back the fp32 table exactly. Compared in row chunks: a full
+        # fp32 copy (933 MB) would exist for a few milliseconds only, a spike the harness's
+        # 100 ms nvidia-smi poller can miss while PyTorch's reserved peak records it (check 9
+        # compares the two; seen on a T4: reserved 3164 MiB vs nvidia-smi 2831 MiB).
+        rows = half.shape[0]
+        for start in range(0, rows, 4096):
+            stop = min(start + 4096, rows)
+            if not torch.equal(half[start:stop].to(torch.float32), weight.detach()[start:stop]):
+                return False
     table = torch.nn.Parameter(half, requires_grad=False)
     emb.weight = table
     head.weight = table

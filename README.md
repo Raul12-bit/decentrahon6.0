@@ -36,10 +36,11 @@
 - **Финальный коммит:** последний коммит ветки [`main`](https://github.com/Raul12-bit/decentrahon6.0/commits/main).
   Его `solution/` побайтно тот же, что в замеренном коммите
   [`4e000cd`](https://github.com/Raul12-bit/decentrahon6.0/commit/4e000cd) (sha256 папки
-  `4028fbb2…`, как считает `check_rules.py`); после него менялись только README и SUBMISSION.md.
-- **Kaggle-ноутбук** (официальный шаблон, публичный):
-  https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission. Его сохранённая версия
-  сделана на коммите `b21090d` (фаза 3); замер финального кода — в таблице выше.
+  `4028fbb2…`, как считает `check_rules.py`); после него менялись только README, SUBMISSION.md и
+  [`assets/`](assets/).
+- **Kaggle-ноутбук** (официальный шаблон, публичный, `COMMIT` = финальный коммит):
+  https://www.kaggle.com/code/sayatsaytli/soup-kernel-challenge-t4-final. Прежний публичный
+  ноутбук фазы 3 (коммит `b21090d`): https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission.
 - **Демо-видео (2:50):** [смотреть в браузере](https://cdn.jsdelivr.net/gh/Raul12-bit/decentrahon6.0@211a969/assets/soup_demo.mp4)
   · файл [`assets/soup_demo.mp4`](assets/soup_demo.mp4) — схема решения, тесты на CPU и прогон на
   Kaggle T4 (pytest, `run_task.py`, `check_rules.py`); озвучка на русском, субтитры —

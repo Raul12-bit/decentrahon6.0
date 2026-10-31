@@ -5,12 +5,14 @@
 - Final commit: the last commit of `main`,
   https://github.com/Raul12-bit/decentrahon6.0/commits/main. Its solution code is the code measured
   on a Kaggle T4 in https://github.com/Raul12-bit/decentrahon6.0/commit/4e000cd: later commits change
-  documentation only, `solution/` is byte-identical (sha256 of `solution/`, computed like
-  `solution_sha256` in `runs/checks.json`:
+  documentation and `assets/` only, `solution/` is byte-identical (sha256 of `solution/`, computed
+  like `solution_sha256` in `runs/checks.json`:
   `4028fbb20de57b0ac25f91f80deb91b3cd14da4042b7946e24b751272b23efed`).
-- Public Kaggle notebook, the saved version of `templates/kaggle_notebook.ipynb` (the same link is in
-  the README): https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission. Its saved
-  version was run on commit `b21090d` (phase 3 code, results below).
+- Public Kaggle notebook, the saved version of `templates/kaggle_notebook.ipynb` with `COMMIT` = the
+  final commit (the same link is in the README):
+  https://www.kaggle.com/code/sayatsaytli/soup-kernel-challenge-t4-final. The earlier public
+  notebook of the phase 3 code (commit `b21090d`):
+  https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission.
 - Demo video (up to 3 minutes, 2:50, Russian narration with subtitles), plays in the browser:
   https://cdn.jsdelivr.net/gh/Raul12-bit/decentrahon6.0@211a969/assets/soup_demo.mp4 (the same
   file in the repository: `assets/soup_demo.mp4`, subtitles `assets/soup_demo.srt`)

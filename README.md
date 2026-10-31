@@ -40,9 +40,12 @@
 - **Kaggle-ноутбук** (официальный шаблон, публичный):
   https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission. Его сохранённая версия
   сделана на коммите `b21090d` (фаза 3); замер финального кода — в таблице выше.
-- **Демо-видео (2:50):** [`assets/soup_demo.mp4`](assets/soup_demo.mp4) — схема решения, тесты на
-  CPU и прогон на Kaggle T4 (pytest, `run_task.py`, `check_rules.py`); озвучка на русском,
-  субтитры — [`assets/soup_demo.srt`](assets/soup_demo.srt).
+- **Демо-видео (2:50):** [смотреть в браузере](https://cdn.jsdelivr.net/gh/Raul12-bit/decentrahon6.0@211a969/assets/soup_demo.mp4)
+  · файл [`assets/soup_demo.mp4`](assets/soup_demo.mp4) — схема решения, тесты на CPU и прогон на
+  Kaggle T4 (pytest, `run_task.py`, `check_rules.py`); озвучка на русском, субтитры —
+  [`assets/soup_demo.srt`](assets/soup_demo.srt).
+- **Команда:** Bayrzhan Tanatar (капитан), Almen Magzhan (ИИ-инженер), Sayat Mukhamedzhanov
+  (машинное обучение), Ni Raul (софтвер-инженер) — [подробнее](#команда).
 - **Всё решение** — пакет [`solution/`](solution/), подключается одной функцией `solution.apply()`.
 
 ## Содержание
@@ -56,7 +59,8 @@
 [Как запустить](#как-запустить) ·
 [Проверка](#проверка) ·
 [Структура](#структура-репозитория) ·
-[Ограничения](#ограничения-и-что-дальше)
+[Ограничения](#ограничения-и-что-дальше) ·
+[Команда](#команда)
 
 ## Где теряет время и память базовый Soup
 
@@ -454,6 +458,15 @@ templates/                   шаблон Kaggle-ноутбука и SUBMISSION.
   cuBLAS может выбрать другой алгоритм: отличие на уровне округления fp16.
 - Layer streaming (`StreamedLargeLayer`, `_prefetch_stream`) в задаче не используется, а встроенные
   режимы Soup правила переключать запрещают — эти пути не трогали.
+
+## Команда
+
+| Участник | Роль | GitHub |
+|---|---|---|
+| Bayrzhan Tanatar | капитан | [@baurzhanx22](https://github.com/baurzhanx22) |
+| Almen Magzhan | ИИ-инженер | [@magasigmaff39](https://github.com/magasigmaff39) |
+| Sayat Mukhamedzhanov | машинное обучение | [@lisayatsayt-byte](https://github.com/lisayatsayt-byte) |
+| Ni Raul | софтвер-инженер | [@Raul12-bit](https://github.com/Raul12-bit) |
 
 ## Источники идей
 

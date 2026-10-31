@@ -8,8 +8,8 @@
   documentation and `assets/` only, `solution/` is byte-identical (sha256 of `solution/`, computed
   like `solution_sha256` in `runs/checks.json`:
   `4028fbb20de57b0ac25f91f80deb91b3cd14da4042b7946e24b751272b23efed`).
-- Public Kaggle notebook, the saved version of `templates/kaggle_notebook.ipynb` with `COMMIT` = the
-  final commit (the same link is in the README):
+- Public Kaggle notebook, the saved version of `templates/kaggle_notebook.ipynb` with `COMMIT` =
+  `b55de11` (later commits change documentation only; the same link is in the README):
   https://www.kaggle.com/code/sayatsaytli/soup-kernel-challenge-t4-final. The earlier public
   notebook of the phase 3 code (commit `b21090d`):
   https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission.
@@ -67,6 +67,10 @@ solution, base), `check_rules.py`, `score.py`; Kaggle GPU T4 x2, commit 4e000cd,
 | Time of `soup train`, s (median of 2) | 84.83 | 60.69 | speedup x1.398 |
 | Peak GPU memory, MiB (nvidia-smi, max of 2) | 14345 | 2479 | base/ours x5.787 |
 | Eval loss (public rows) | 2.04967 | 2.04965 | -0.001% vs base |
+
+The public notebook above (official template, `run_task.py` with 1 repeat, another Kaggle session,
+commit b55de11 with the same `solution/`): base 83.58 s / 14345 MiB, ours 64.63 s / 2477 MiB,
+speedup x1.293, memory x5.791, eval loss -0.002% vs base; all 10 checks passed (own kernels 17.9%).
 
 Earlier measurements of the phase 3 code (commit 7817156, the same `solution/` as b21090d):
 

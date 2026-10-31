@@ -11,7 +11,9 @@
 - Public Kaggle notebook, the saved version of `templates/kaggle_notebook.ipynb` (the same link is in
   the README): https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission. Its saved
   version was run on commit `b21090d` (phase 3 code, results below).
-- Demo video (up to 3 minutes): <link>
+- Demo video (up to 3 minutes, 2:50, Russian narration with subtitles):
+  https://github.com/Raul12-bit/decentrahon6.0/blob/main/assets/soup_demo.mp4 (subtitles:
+  `assets/soup_demo.srt`)
 - Presentation: <link>
 
 ## Team (up to 4 people)

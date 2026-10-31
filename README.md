@@ -40,6 +40,9 @@
 - **Kaggle-ноутбук** (официальный шаблон, публичный):
   https://www.kaggle.com/code/ff3923/soup-kernel-challenge-t4-submission. Его сохранённая версия
   сделана на коммите `b21090d` (фаза 3); замер финального кода — в таблице выше.
+- **Демо-видео (2:50):** [`assets/soup_demo.mp4`](assets/soup_demo.mp4) — схема решения, тесты на
+  CPU и прогон на Kaggle T4 (pytest, `run_task.py`, `check_rules.py`); озвучка на русском,
+  субтитры — [`assets/soup_demo.srt`](assets/soup_demo.srt).
 - **Всё решение** — пакет [`solution/`](solution/), подключается одной функцией `solution.apply()`.
 
 ## Содержание

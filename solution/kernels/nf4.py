@@ -29,6 +29,8 @@ bitsandbytes format; the kernel is our own.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 
@@ -229,42 +231,57 @@ class AddNormGateUpSwiGLUFunction(torch.autograd.Function):
     fp16; here the kernel rounds the fp32 row once and writes only the fp16 copy, so the values
     are the same and the fp32 [tokens, H] output and its cast kernel are gone.
 
-    Saved for backward: resid_out (fp32, which base keeps too) and rstd. With recompute (the
-    default) x16 is rebuilt in backward by the same kernel from the same resid_out (bit-identical
-    rstd and x16), then gate/up are recomputed on the weights backward unpacks anyway; so the
-    MLP keeps no activation of its own: neither gate/up (35 KB per token) nor fp16 x (3 KB).
-    Without recompute gate and up are saved instead. The two input gradients of x16 are added
-    in fp32 and enter the RMSNorm backward with the residual gradient, as in base.
+    Saved for backward (phase 4, `keep_delta`): the input residual, which the layer's input norm
+    keeps anyway (the same storage, so it costs nothing here), and the fp16 attention output
+    delta (3 KB per token) instead of the fp32 resid_out (6 KB per token). Backward rebuilds
+    resid_out, x16 and rstd in one pass of the same kernel on the same inputs: the same fp32 add
+    and the same row reduction, so the same bits. Without `keep_delta`: resid_out and rstd.
+
+    With recompute (the default) gate/up are recomputed in backward from the rebuilt x16 on the
+    weights backward unpacks anyway; so the MLP keeps no activation of its own: neither gate/up
+    (35 KB per token) nor fp16 x (3 KB). Without recompute gate and up are saved instead. The two
+    input gradients of x16 are added in fp32 and enter the RMSNorm backward with the residual
+    gradient, as in base.
     """
 
     @staticmethod
-    def forward(ctx, resid, delta, norm_weight, eps, gate, up, recompute):
+    def forward(ctx, resid, delta, norm_weight, eps, gate, up, recompute, keep_delta):
         with torch.autocast(device_type=resid.device.type, enabled=False):
             resid_out, x16, rstd = _norm_fwd(resid, delta, norm_weight, eps, torch.float16)
             g = _nf4_linear_nograd(gate, x16)
             u = _nf4_linear_nograd(up, x16)
             p = swiglu_fwd(g, u)
         del x16
+        state = (resid, delta, norm_weight) if keep_delta else (resid_out, norm_weight, rstd)
         if recompute:
             del g, u
-            ctx.save_for_backward(resid_out, norm_weight, rstd)
+            ctx.save_for_backward(*state)
         else:
-            ctx.save_for_backward(resid_out, norm_weight, rstd, g, u)
+            ctx.save_for_backward(*state, g, u)
         ctx.gate, ctx.up, ctx.recompute, ctx.eps = gate, up, recompute, eps
+        ctx.keep_delta = keep_delta
         return resid_out, p
 
     @staticmethod
     def backward(ctx, dres, dp):
         saved = ctx.saved_tensors
-        resid_out, norm_weight, rstd = saved[:3]
+        x16 = None
+        if ctx.keep_delta:
+            resid, delta, norm_weight = saved[:3]
+            resid_out, x16, rstd = _norm_fwd(resid, delta, norm_weight, ctx.eps, torch.float16)
+            del resid, delta
+        else:
+            resid_out, norm_weight, rstd = saved[:3]
         w_gate = dequantize_nf4(ctx.gate)
         w_up = dequantize_nf4(ctx.up)
         if ctx.recompute:
-            _, x16, _ = _norm_fwd(resid_out, None, norm_weight, ctx.eps, torch.float16)
+            if x16 is None:
+                _, x16, _ = _norm_fwd(resid_out, None, norm_weight, ctx.eps, torch.float16)
             g = F.linear(x16, w_gate, _bias16(ctx.gate, x16.dtype))
             u = F.linear(x16, w_up, _bias16(ctx.up, x16.dtype))
             del x16
         else:
+            del x16
             g, u = saved[3:]
         if dp is None:
             dy = torch.zeros_like(resid_out)
@@ -276,13 +293,18 @@ class AddNormGateUpSwiGLUFunction(torch.autograd.Function):
             del du
         del g, u, w_gate, w_up
         dx, ddelta = _norm_bwd(dy, dres, resid_out, norm_weight, rstd, with_delta=True)
-        return dx, ddelta, None, None, None, None, None
+        return dx, ddelta, None, None, None, None, None, None
 
 
-def add_norm_gate_up_swiglu(resid, delta, norm_weight, eps, gate, up, recompute: bool = True):
+def add_norm_gate_up_swiglu(resid, delta, norm_weight, eps, gate, up, recompute: bool = True,
+                            keep_delta: Optional[bool] = None):
     """(resid + delta, silu(gate(x)) * up(x)) with x = fp16(RMSNorm(resid + delta))."""
+    if keep_delta is None:
+        keep_delta = _runtime.RESID_DELTA
+    keep_delta = bool(keep_delta) and resid.dtype == torch.float32 and \
+        delta.dtype == torch.float16
     return AddNormGateUpSwiGLUFunction.apply(resid, delta, norm_weight, float(eps), gate, up,
-                                             bool(recompute))
+                                             bool(recompute), keep_delta)
 
 
 def reference_dequantize(module) -> torch.Tensor:

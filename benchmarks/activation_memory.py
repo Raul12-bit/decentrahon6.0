@@ -27,11 +27,17 @@ sys.path.insert(0, str(REPO))
 LENGTHS = (64, 40, 17, 52)  # a right-padded batch of 4 rows
 PATHS = {
     "phase1 (masked attention, separate MLP norm)": {"VARLEN_ATTN": False, "FUSED_MLP_NORM": False,
-                                                     "LORA_REMAT": False},
+                                                     "LORA_REMAT": False, "PACKED_MASKS": False,
+                                                     "RESID_DELTA": False},
     "phase2 (per-row attention, fused MLP norm)": {"VARLEN_ATTN": True, "FUSED_MLP_NORM": True,
-                                                   "LORA_REMAT": False},
+                                                   "LORA_REMAT": False, "PACKED_MASKS": False,
+                                                   "RESID_DELTA": False},
     "phase3 (+ LoRA input rematerialized)": {"VARLEN_ATTN": True, "FUSED_MLP_NORM": True,
-                                             "LORA_REMAT": True},
+                                             "LORA_REMAT": True, "PACKED_MASKS": False,
+                                             "RESID_DELTA": False},
+    "phase4 (+ mask bits, fp16 attention delta)": {"VARLEN_ATTN": True, "FUSED_MLP_NORM": True,
+                                                   "LORA_REMAT": True, "PACKED_MASKS": True,
+                                                   "RESID_DELTA": True},
 }
 
 

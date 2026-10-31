@@ -297,15 +297,88 @@ def test_fast_path_matches_base_on_tiny_4bit_qwen2_cpu(tiny_qlora_qwen2, monkeyp
         assert rel < 1e-2, float(rel)
 
 
+def test_fast_path_phase4_changes_no_bit(tiny_qlora_qwen2, monkeypatch):
+    """Phase 4 only changes what is stored for backward (mask bits instead of bool, the fp16
+    attention output instead of the fp32 residual): loss, every LoRA gradient and the RNG
+    stream must be bit for bit those of the phase 3 path."""
+    from solution import _runtime
+    from solution.kernels import lora
+    from solution.patches import patch_qwen as pm
+
+    model, vocab = tiny_qlora_qwen2
+    monkeypatch.setitem(lora.STATE, "packed", True)
+    torch.manual_seed(11)
+    batch, seq = 3, 24
+    ids = torch.randint(0, vocab, (batch, seq))
+    attn = torch.ones(batch, seq, dtype=torch.long)
+    attn[1, 15:] = 0
+    attn[2, 4:] = 0
+    labels = ids.clone()
+    labels[attn == 0] = -100
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    def run(phase4):
+        monkeypatch.setattr(_runtime, "PACKED_MASKS", phase4)
+        monkeypatch.setattr(_runtime, "RESID_DELTA", phase4)
+        for p in params:
+            p.grad = None
+        torch.manual_seed(321)
+        request = pm._StepRequest(None)
+        pm._REQUEST = request
+        try:
+            with torch.autocast("cpu", dtype=torch.float16):
+                out = model(input_ids=ids, attention_mask=attn, labels=labels, use_cache=False)
+        finally:
+            pm._REQUEST = None
+        out.loss.backward()
+        assert request.result is not None, "the fast path did not run"
+        return out.loss.detach(), [p.grad.detach().clone() for p in params], torch.rand(4)
+
+    old_loss, old_grads, old_rng = run(False)
+    new_loss, new_grads, new_rng = run(True)
+    assert torch.equal(old_loss, new_loss)
+    assert torch.equal(old_rng, new_rng)
+    for g_old, g_new in zip(old_grads, new_grads):
+        assert torch.equal(g_old, g_new), float((g_old - g_new).abs().max())
+
+
+def test_dropout_mask_bits_kernels():
+    """Packing the rows of the real tokens out of the padded mask, then the backward's
+    unpack + masked scale, against the bool mask and torch.where: bit for bit."""
+    from solution.kernels import lora
+
+    mask = torch.rand(11, HIDDEN) > 0.05
+    rows = torch.tensor([0, 3, 4, 9, 10, 1])
+    keep = lora.pack_mask(mask, rows)
+    assert keep.dtype == torch.uint8 and keep.shape == (6, HIDDEN // 8)
+    bits = (keep[:, :, None].int() >> torch.arange(8)) & 1
+    assert torch.equal(bits.reshape(6, HIDDEN).bool(), mask[rows])
+    x = torch.randn(6, HIDDEN)
+    dx16 = torch.randn(6, HIDDEN).half()
+    scale = lora._scale(0.05)
+    got_x, got_dx = lora.dropout_backward(x, dx16, keep, scale)
+    want_x, want_dx = lora.dropout_backward(x, dx16, mask[rows], scale)
+    assert got_x.dtype == torch.float16 and got_dx.dtype == torch.float32
+    assert torch.equal(got_x, want_x) and torch.equal(got_dx, want_dx)
+    only_x, none = lora.dropout_backward(x, None, keep, scale)
+    assert none is None and torch.equal(only_x, want_x)
+    assert torch.equal(lora.pack_mask(mask[:4], None), lora.pack_mask(mask, torch.arange(4)))
+
+
+@pytest.mark.parametrize("packed", [True, False])
 @pytest.mark.parametrize("pads", [False, True])
-def test_lora_remat_is_bit_identical_to_peft_branch(pads):
+def test_lora_remat_is_bit_identical_to_peft_branch(pads, packed, monkeypatch):
     """kernels/lora.py against what base computes: peft's lora_B(lora_A(dropout(x))) * scaling
     under fp16 autocast, dropout on the padded layout, x = the input norm's fp32 output. Output,
-    dA, dB, dx and the RNG advance must be bit for bit the same: the rebuilt x16 is exact."""
+    dA, dB, dx and the RNG advance must be bit for bit the same: the rebuilt x16 is exact, with
+    the mask kept as bits (phase 4) or as bool."""
     from types import SimpleNamespace
 
+    from solution import _runtime
     from solution.kernels.lora import lora_remat
     from solution.kernels.rmsnorm import add_rmsnorm_rstd
+
+    monkeypatch.setattr(_runtime, "PACKED_MASKS", packed)
 
     hidden, rank, out_features, scaling, p = HIDDEN, 16, HIDDEN, 2.0, 0.05
     batch, seq = 3, 9

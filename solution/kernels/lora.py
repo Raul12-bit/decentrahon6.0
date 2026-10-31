@@ -13,16 +13,25 @@ can get without storing it:
 
     x       = RMSNorm(resid)     the residual and rstd the input norm keeps anyway; the same
                                  `_add_rmsnorm_fwd_kernel` on the same row gives the same bits
-    mask    = dropout's keep mask, 1 byte per element and only for the real tokens (base's
-                                 dropout keeps it too, for every padded position)
+    mask    = dropout's keep mask, only for the real tokens, packed 8 per byte (base's dropout
+                                 keeps it as 1 byte per element, for every padded position)
     scale   = 1 / (1 - p)        as float32
 
-so `LoraRematFunction` saves (mask, a16) and rebuilds x16 = fp16(where(mask, x * scale, 0)) in
-backward: the exact tensor of the forward pass. Every GEMM is the call peft/autocast makes
+so `LoraRematFunction` saves (mask bits, a16) and rebuilds x16 = fp16(where(mask, x * scale, 0))
+in backward: the exact tensor of the forward pass. Every GEMM is the call peft/autocast makes
 (F.linear on fp16 operands, weight gradients as grad^T @ input), every rounding point is the
 same, the gradient of x is dropout's backward (grad * mask * scale) of the fp16 -> fp32 cast of
 dx16. The only extra work in backward is one RMSNorm row recompute (our Triton kernel) and the
 masked scale.
+
+The mask bits (phase 4): `_dropout_mask_pack_kernel` reads the bool keep mask dropout returns on
+the padded [B * S, H] layout, picks the real tokens' rows (the gather `index_select` used to do)
+and writes bit j of byte k = column 8k + j: 0.19 KB per token instead of 1.5 KB, twice per
+layer. In backward `_dropout_bits_bwd_kernel` unpacks a row once and applies dropout's masked
+scale to both tensors that need it: fp16(where(keep, x * scale, 0)), the rebuilt input of lora_A,
+and where(keep, fp32(dx16) * scale, 0), the fp32 gradient of x. The same fp32 products and the
+same rounding as the torch.where chains it replaces (one kernel instead of six), so the values
+are bit for bit the same. Two small binaries to compile, both built by the warm-up thread.
 
 Dropout's random stream is base's. The mask is drawn by the same kernel base uses, over the
 same padded [B * S, H] layout, in the same order (q's LoRA, then v's): on CUDA F.dropout is
@@ -30,8 +39,9 @@ same padded [B * S, H] layout, in the same order (q's LoRA, then v's): on CUDA F
 when the fused kernel is acceptable, i.e. a CUDA tensor and 0 < p < 1), which also returns the
 mask; on the CPU F.dropout is `bernoulli_(1 - p)` on an empty tensor and `x * noise / (1 - p)`,
 which `_dropout_with_mask` reproduces call for call. `dropout_self_check` verifies on the run's
-own device, before training, that both give F.dropout's exact output, RNG advance and gradient;
-if anything differs the fast path keeps peft's own LoRA branch (`ENABLED` turns False).
+own device, before training, that both give F.dropout's exact output, RNG advance and gradient,
+also through the packed bits; if the mask itself differs the fast path keeps peft's own LoRA
+branch (`ENABLED` turns False), if only the bits do, the bool mask is kept instead.
 """
 
 from __future__ import annotations
@@ -44,8 +54,65 @@ import torch.nn.functional as F
 from .. import _runtime
 from .rmsnorm import _norm_fwd
 
-# Turned off by `dropout_self_check` if this device's dropout does not match.
-STATE = {"enabled": True, "checked": False}
+try:
+    import triton
+    import triton.language as tl
+except Exception:  # noqa: BLE001 - no Triton: the bool mask and torch.where are used
+    triton = None
+    tl = None
+
+# Turned off by `dropout_self_check` if this device's dropout does not match ("enabled"), or if
+# only the packed bits do not ("packed").
+STATE = {"enabled": True, "checked": False, "packed": True}
+MASK_WARPS = 4
+SCALE_WARPS = 8
+
+
+if triton is not None:
+
+    @triton.jit
+    def _dropout_mask_pack_kernel(
+        mask_ptr,  # *u8 [R, H]: dropout's keep mask (a bool tensor viewed as bytes, 0 or 1)
+        rows_ptr,  # *i64 [T]: row of the mask that holds token t (padded layout: b * S + s)
+        bits_ptr,  # *u8 [T, H // 8]: bit j of byte k = keep[rows[t], 8 * k + j]
+        n_cols,  # H, a multiple of 8
+        BLOCK_BYTES: tl.constexpr,
+    ):
+        t = tl.program_id(0).to(tl.int64)
+        row = tl.load(rows_ptr + t)
+        n_bytes = n_cols // 8
+        k = tl.arange(0, BLOCK_BYTES)
+        j = tl.arange(0, 8)
+        live = k < n_bytes
+        keep = tl.load(mask_ptr + row * n_cols + k[:, None] * 8 + j[None, :],
+                       mask=live[:, None], other=0).to(tl.int32)
+        packed = tl.sum((keep != 0).to(tl.int32) << j[None, :], axis=1)
+        tl.store(bits_ptr + t * n_bytes + k, packed.to(tl.uint8), mask=live)
+
+    @triton.jit(do_not_specialize=["has_dx"])
+    def _dropout_bits_bwd_kernel(
+        x_ptr,  # *f32 [T, H]: the input norm's output, recomputed
+        dx16_ptr,  # *f16 [T, H]: gradient of lora_A's fp16 input (if has_dx)
+        bits_ptr,  # *u8 [T, H // 8] from `_dropout_mask_pack_kernel`
+        scale_ptr,  # *f32 [1]: 1 / (1 - p)
+        x16_ptr,  # *f16 [T, H] out: fp16(where(keep, x * scale, 0)), lora_A's forward input
+        dx_ptr,  # *f32 [T, H] out: where(keep, fp32(dx16) * scale, 0), dropout's backward
+        n_cols,
+        has_dx,
+        BLOCK: tl.constexpr,
+    ):
+        t = tl.program_id(0).to(tl.int64)
+        cols = tl.arange(0, BLOCK)
+        live = cols < n_cols
+        byte = tl.load(bits_ptr + t * (n_cols // 8) + cols // 8, mask=live, other=0).to(tl.int32)
+        keep = ((byte >> (cols % 8)) & 1) != 0
+        scale = tl.load(scale_ptr)
+        x = tl.load(x_ptr + t * n_cols + cols, mask=live, other=0.0)
+        tl.store(x16_ptr + t * n_cols + cols, tl.where(keep, x * scale, 0.0).to(tl.float16),
+                 mask=live)
+        if has_dx != 0:
+            g = tl.load(dx16_ptr + t * n_cols + cols, mask=live, other=0.0).to(tl.float32)
+            tl.store(dx_ptr + t * n_cols + cols, tl.where(keep, g * scale, 0.0), mask=live)
 
 
 def _scale(p: float) -> torch.Tensor:
@@ -65,6 +132,52 @@ def _dropout_with_mask(x: torch.Tensor, p: float):
     return out, noise != 0
 
 
+def _bits_ok(mask: torch.Tensor) -> bool:
+    return (triton is not None and _runtime.PACKED_MASKS and STATE["packed"]
+            and mask.dtype == torch.bool and mask.dim() == 2 and mask.shape[1] % 8 == 0
+            and _runtime.device_ok(mask))
+
+
+def pack_mask(mask: torch.Tensor, rows: Optional[torch.Tensor]) -> torch.Tensor:
+    """The keep mask of the real tokens (`rows` of `mask`; all rows if None), as kept for
+    backward: [T, H // 8] uint8 bits when the kernel can run, else the bool rows themselves."""
+    if not _bits_ok(mask):
+        return mask if rows is None else mask.index_select(0, rows)
+    mask = mask.contiguous()
+    n_cols = mask.shape[1]
+    if rows is None:
+        rows = torch.arange(mask.shape[0], device=mask.device)
+    bits = torch.empty((rows.numel(), n_cols // 8), dtype=torch.uint8, device=mask.device)
+    if rows.numel():
+        _dropout_mask_pack_kernel[(rows.numel(),)](
+            mask.view(torch.uint8), rows, bits, n_cols,
+            BLOCK_BYTES=_runtime.next_pow2(n_cols // 8), num_warps=MASK_WARPS)
+    return bits
+
+
+def dropout_backward(x32: torch.Tensor, dx16: Optional[torch.Tensor], keep: torch.Tensor,
+                     scale: torch.Tensor):
+    """Dropout's masked scale for the LoRA backward, (fp16(where(keep, x32 * scale, 0)),
+    where(keep, fp32(dx16) * scale, 0) or None): the rebuilt fp16 input of lora_A and the fp32
+    gradient of x. `keep` is what `pack_mask` returned (bits: one kernel; bool: torch.where)."""
+    if keep.dtype == torch.uint8:
+        x32 = x32.contiguous()
+        n_rows, n_cols = x32.shape
+        x16 = torch.empty((n_rows, n_cols), dtype=torch.float16, device=x32.device)
+        dx = None if dx16 is None else torch.empty_like(x32)
+        if n_rows:
+            _dropout_bits_bwd_kernel[(n_rows,)](
+                x32, x16 if dx16 is None else dx16.contiguous(), keep, scale.reshape(1), x16,
+                x32 if dx is None else dx, n_cols, int(dx16 is not None),
+                BLOCK=_runtime.next_pow2(n_cols), num_warps=SCALE_WARPS)
+        return x16, dx
+    zero = torch.zeros((), dtype=torch.float32, device=x32.device)
+    x16 = torch.where(keep, x32 * scale, zero).to(torch.float16)
+    if dx16 is None:
+        return x16, None
+    return x16, torch.where(keep, dx16.to(torch.float32) * scale, zero)
+
+
 class LoraRematFunction(torch.autograd.Function):
     """out16 = (fp16(dropout(x32)) @ A^T @ B^T) * scaling, the LoRA term of q_proj / v_proj.
 
@@ -79,19 +192,22 @@ class LoraRematFunction(torch.autograd.Function):
             if p > 0:
                 if layout.full:
                     dropped, mask = _dropout_with_mask(x32.detach(), p)
+                    rows = None
                 else:  # base's layout: the padded [B * S, H] rows, then the real ones
                     dropped, mask = _dropout_with_mask(layout.padded(), p)
                     dropped = dropped.index_select(0, layout.dst)
-                    mask = mask.index_select(0, layout.dst)
+                    rows = layout.dst
+                keep = pack_mask(mask, rows)
+                del mask
             else:
-                dropped, mask = x32.detach(), None
+                dropped, keep = x32.detach(), None
             x16 = dropped.to(torch.float16)
             del dropped
             a16 = F.linear(x16, lora_a.to(torch.float16))
             out = F.linear(a16, lora_b.to(torch.float16)) * scaling
         del x16
         ctx.save_for_backward(resid, rstd, norm_weight, lora_a, lora_b, a16,
-                              *(() if mask is None else (mask,)))
+                              *(() if keep is None else (keep,)))
         ctx.eps, ctx.scaling, ctx.p = eps, scaling, p
         ctx.x_dtype = x32.dtype
         return out
@@ -100,28 +216,27 @@ class LoraRematFunction(torch.autograd.Function):
     def backward(ctx, dout):
         saved = ctx.saved_tensors
         resid, rstd, norm_weight, lora_a, lora_b, a16 = saved[:6]
-        mask = saved[6] if len(saved) > 6 else None
+        keep = saved[6] if len(saved) > 6 else None
         a16_w, b16_w = lora_a.to(torch.float16), lora_b.to(torch.float16)
         db = dout.to(torch.float16) * ctx.scaling
         grad_b = db.t().mm(a16)  # F.linear's weight gradient: grad^T @ input
         da = db.mm(b16_w)
         del db, a16
-        # The forward's x16, rebuilt: the same norm kernel on the same residual row, then the
-        # dropout's own masked scale.
+        # The gradient of lora_A's fp16 input (autocast casts it back to x's dtype), and the
+        # forward's x16, rebuilt: the same norm kernel on the same residual row, then the
+        # dropout's own masked scale (with the mask: one pass for both, see dropout_backward).
+        dx16 = da.mm(a16_w) if ctx.needs_input_grad[0] else None
         _, x32, _ = _norm_fwd(resid, None, norm_weight, ctx.eps)
-        if mask is not None:
-            scale = _scale(ctx.p).to(x32.device)
-            x32 = torch.where(mask, x32 * scale, torch.zeros((), dtype=x32.dtype,
-                                                            device=x32.device))
-        grad_a = da.t().mm(x32.to(torch.float16))
-        del x32
-        grad_x = None
-        if ctx.needs_input_grad[0]:
-            dx = da.mm(a16_w).to(torch.float32)  # autocast's cast back to x's dtype
-            if mask is not None:  # dropout's backward: grad * mask * scale
-                dx = torch.where(mask, dx * scale, torch.zeros((), dtype=dx.dtype,
-                                                               device=dx.device))
-            grad_x = dx.to(ctx.x_dtype)
+        if keep is not None:
+            x16, grad_x = dropout_backward(x32, dx16, keep, _scale(ctx.p).to(x32.device))
+        else:
+            x16, grad_x = x32.to(torch.float16), (None if dx16 is None
+                                                  else dx16.to(torch.float32))
+        del x32, dx16
+        grad_a = da.t().mm(x16)
+        del x16
+        if grad_x is not None:
+            grad_x = grad_x.to(ctx.x_dtype)
         return (grad_x, grad_a.to(lora_a.dtype), grad_b.to(lora_b.dtype), None, None, None,
                 None, None, None, None)
 
@@ -135,23 +250,25 @@ def enabled() -> bool:
     return _runtime.LORA_REMAT and STATE["enabled"]
 
 
-def dropout_self_check(device: torch.device, p: float) -> Optional[str]:
+def dropout_self_check(device: torch.device, p: float, n_cols: int = 4096) -> Optional[str]:
     """None if `_dropout_with_mask` + the backward formulas give F.dropout's exact output,
-    gradient and RNG advance on `device`; else why not (and the feature turns off).
+    gradient and RNG advance on `device`; else why not (and the feature turns off). The packed
+    mask bits are checked the same way; if only they differ, the bool mask is kept instead.
 
     Runs in the main thread before training, inside torch.random.fork_rng, so the training run's
-    RNG state is exactly what it was before the check."""
+    RNG state is exactly what it was before the check. `n_cols` should be the model's hidden
+    size, so the kernels it launches are the binaries training uses (compiled by the warm-up)."""
     STATE["checked"] = True
     try:
         devices = [device] if device.type == "cuda" else []
         with torch.random.fork_rng(devices=devices):
-            n = torch.arange(3 * 4096, device=device, dtype=torch.float32)
-            x = (torch.sin(n * 0.37) * 3.0).reshape(3, 4096)
+            n = torch.arange(3 * n_cols, device=device, dtype=torch.float32)
+            x = (torch.sin(n * 0.37) * 3.0).reshape(3, n_cols)
             torch.manual_seed(1234)
             xr = x.clone().requires_grad_(True)
             ref = F.dropout(xr, p, True)
             after_ref = torch.rand(8, device=device)
-            g = torch.cos(n * 0.11).reshape(3, 4096)
+            g = torch.cos(n * 0.11).reshape(3, n_cols)
             ref.backward(g)
             torch.manual_seed(1234)
             out, mask = _dropout_with_mask(x, p)
@@ -168,9 +285,39 @@ def dropout_self_check(device: torch.device, p: float) -> Optional[str]:
                 problem = "backward differs"
             else:
                 problem = None
+            if problem is None:
+                _check_bits(mask, x, g, scale)
     except Exception as exc:  # noqa: BLE001
         problem = f"check raised {exc!r}"
     if problem is not None:
         STATE["enabled"] = False
         _runtime.log(f"LoRA input rematerialization off: dropout check: {problem}")
     return problem
+
+
+def _check_bits(mask, x, g, scale) -> None:
+    """The packed path against the bool one, as training uses it: rows picked from a larger
+    mask, fp32 -> fp16 for the rebuilt input, fp16 -> fp32 for the gradient. Bits off if not
+    bit for bit equal."""
+    if not _bits_ok(mask):
+        return
+    problem = None
+    try:
+        rows = torch.tensor([2, 0], device=mask.device)
+        keep = pack_mask(mask, rows)
+        picked = mask.index_select(0, rows)
+        x2, g2 = x.index_select(0, rows), g.index_select(0, rows).to(torch.float16)
+        want_x, want_g = dropout_backward(x2, g2, picked, scale)  # the torch.where path
+        got_x, got_g = (None, None) if keep.dtype != torch.uint8 else \
+            dropout_backward(x2, g2, keep, scale)
+        if got_x is None:
+            problem = "not packed"
+        elif not torch.equal(got_x, want_x):
+            problem = "rebuilt input differs"
+        elif not torch.equal(got_g, want_g):
+            problem = "input gradient differs"
+    except Exception as exc:  # noqa: BLE001
+        problem = f"raised {exc!r}"
+    if problem is not None:
+        STATE["packed"] = False
+        _runtime.log(f"LoRA dropout masks stay bool (1 byte per element): bits check: {problem}")

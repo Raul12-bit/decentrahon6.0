@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import atexit
 import threading
+import time
 from typing import Optional
 
 import torch
 
 from . import _runtime
 
-_STATE: dict = {"thread": None, "problems": None}
+_STATE: dict = {"thread": None, "problems": None, "started": None, "seconds": None}
 
 
 def start_background_warmup(base: Optional[str]) -> None:
@@ -31,6 +32,7 @@ def start_background_warmup(base: Optional[str]) -> None:
     thread = threading.Thread(target=_run, args=(base,), name="solution-kernel-warmup",
                               daemon=True)
     _STATE["thread"] = thread
+    _STATE["started"] = time.perf_counter()
     thread.start()
     atexit.register(thread.join, 120)  # never tear the interpreter down mid-compile
 
@@ -44,6 +46,8 @@ def _run(base: str) -> None:
         _STATE["problems"] = compile_kernels(config, device)
     except Exception as exc:  # noqa: BLE001
         _STATE["problems"] = [f"warm-up failed: {exc!r}"]
+    finally:
+        _STATE["seconds"] = time.perf_counter() - _STATE["started"]
 
 
 def ensure_checked(config, device, timeout: float = 600.0) -> list[str]:
@@ -51,9 +55,14 @@ def ensure_checked(config, device, timeout: float = 600.0) -> list[str]:
     warm-up if it runs, otherwise compiles and checks right here."""
     thread = _STATE["thread"]
     if thread is not None:
+        waiting = time.perf_counter()
         thread.join(timeout)
         if thread.is_alive():
             return ["kernel warm-up still running"]
+        # Whether compilation is on the critical path of the measured run: the time training
+        # waited here is wall time the warm-up added.
+        _runtime.log(f"kernel warm-up took {_STATE['seconds']:.1f} s; training waited "
+                     f"{time.perf_counter() - waiting:.1f} s for it")
         problems = _STATE["problems"]
         if problems is not None and not any("warm-up failed" in p for p in problems):
             return problems
@@ -157,6 +166,35 @@ def compile_kernels(config, device) -> list[str]:
     want = ref_rope(x, cos[:2, None, :], sin[:2, None, :]).to(f16)
     _close("rope forward", rotated[0, :, :2].transpose(0, 1), want, 2e-3, problems)
     _close("rope backward finite", base16.grad, base16.grad.nan_to_num(), 0.0, problems)
+    _compile_mask_bits(hidden, device, pattern)
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     return problems
+
+
+def _compile_mask_bits(hidden, device, pattern) -> None:
+    """The LoRA dropout mask bits (kernels/lora.py): pack rows of a larger mask, then the
+    backward's unpack + masked scale, as training launches them. Not bit for bit torch.where's
+    result, or not compiling: the masks stay bool (a memory saving lost, not the fast path)."""
+    from .kernels import lora
+
+    f16, f32 = torch.float16, torch.float32
+    try:
+        with torch.no_grad():
+            mask = pattern(4, hidden, f32) > -0.3
+            if not lora._bits_ok(mask):
+                return
+            rows = torch.tensor([3, 0, 2], device=device)
+            keep = lora.pack_mask(mask, rows)
+            picked = mask.index_select(0, rows)
+            scale = torch.tensor([1.0 / 0.95], device=device, dtype=f32)
+            x, g = pattern(3, hidden, f32, 2.0), pattern(3, hidden, f16, 0.5)
+            got = lora.dropout_backward(x, g, keep, scale)
+            want = lora.dropout_backward(x, g, picked, scale)  # the torch.where path
+        same = keep.dtype == torch.uint8 and all(torch.equal(a, b) for a, b in zip(got, want))
+        problem = None if same else "unpacked values differ"
+    except Exception as exc:  # noqa: BLE001
+        problem = repr(exc)
+    if problem is not None:
+        lora.STATE["packed"] = False
+        _runtime.log(f"LoRA dropout masks stay bool: mask bits warm-up: {problem}")

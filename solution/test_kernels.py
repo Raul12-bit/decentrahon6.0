@@ -141,6 +141,29 @@ def test_rope_lora_scatter(rotate, with_lora):
         torch.testing.assert_close(lora.grad.float(), l2.grad.float(), rtol=2e-3, atol=2e-3)
 
 
+def test_dropout_mask_bits_on_gpu():
+    """Phase 4: the LoRA dropout keep mask of CUDA's dropout kernel, packed 8 per byte from the
+    padded layout and unpacked in the backward's masked scale, bit for bit the bool path."""
+    from solution.kernels import lora
+
+    torch.manual_seed(0)
+    hidden = 1536
+    x_padded = torch.randn(4 * 37, hidden, device="cuda")
+    out, mask = lora._dropout_with_mask(x_padded, 0.05)
+    rows = torch.arange(0, 4 * 37, 3, device="cuda")
+    keep = lora.pack_mask(mask, rows)
+    assert keep.dtype == torch.uint8 and keep.shape == (rows.numel(), hidden // 8)
+    x = torch.randn(rows.numel(), hidden, device="cuda")
+    dx16 = torch.randn(rows.numel(), hidden, device="cuda").half()
+    scale = lora._scale(0.05).cuda()
+    got = lora.dropout_backward(x, dx16, keep, scale)
+    want = lora.dropout_backward(x, dx16, mask.index_select(0, rows), scale)
+    assert torch.equal(got[0], want[0]) and torch.equal(got[1], want[1])
+    assert torch.equal(torch.where(mask, x_padded * scale, torch.zeros((), device="cuda")), out)
+    assert lora.dropout_self_check(torch.device("cuda"), 0.05, hidden) is None
+    assert lora.STATE["packed"]
+
+
 def test_fp16_swiglu():
     from solution.kernels.swiglu import swiglu
 

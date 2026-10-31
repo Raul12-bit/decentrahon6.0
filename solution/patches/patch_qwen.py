@@ -680,8 +680,10 @@ def _check_lora_dropout(model, device) -> None:
         return
     rates = {float(m.p) for m in model.modules()
              if type(m) is torch.nn.Dropout and 0.0 < m.p < 1.0}
+    # The hidden size: the mask-bit kernels then run the binaries the warm-up compiled.
+    hidden = int(getattr(_causal_lm(model).config, "hidden_size", 4096))
     for p in sorted(rates):
-        if lora.dropout_self_check(device, p) is not None:
+        if lora.dropout_self_check(device, p, hidden) is not None:
             return
 
 
@@ -711,9 +713,13 @@ def _store_table_fp16(lm) -> bool:
     emb.__class__ = _Fp32OutputEmbedding
     head.__class__ = _Fp16Head
     object.__setattr__(lm, "_soup_fp16_table", (emb, head))
+    # No torch.cuda.empty_cache() here (phase 4): the freed fp32 table stays reserved and the
+    # training step reuses it. Handing it back to the driver would make the few milliseconds
+    # when both tables exist a reserved peak that nvidia-smi (sampled every 100 ms) can miss
+    # once the training peak is lower than it: the mismatch check 9 rejects. This way our code
+    # never shrinks PyTorch's reserved memory, so a level it reaches stays mapped (and visible
+    # to nvidia-smi) for the rest of the run.
     del weight
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
     return True
 
 

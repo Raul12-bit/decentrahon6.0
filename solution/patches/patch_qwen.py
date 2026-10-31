@@ -629,7 +629,8 @@ def apply_t4_triton_patches(model) -> dict:
       fp16 on a T4 and prepare_model_for_kbit_training only upcasts). Base casts that table to
       fp16 for the lm_head GEMM at every step anyway; the embedding rows still come out in fp32.
     * Checks once whether the fast forward covers the model (the reason is logged if not).
-    Returns a small report. `restore_t4_triton_patches(model)` undoes the table change.
+    Returns a small report. `restore_t4_triton_patches(model)` undoes the table change (after
+    training only with SOUP_KERNELS_RESTORE_TABLE=1, see `_restore_callback`).
     """
     lm = _causal_lm(model)
     report = {"model": type(lm).__name__, "fp16_table": False, "fast_path": False}
@@ -724,7 +725,8 @@ def _store_table_fp16(lm) -> bool:
 
 
 def restore_t4_triton_patches(model) -> None:
-    """Put the fp32 table back (after training, before Soup saves and checks the model)."""
+    """Put the fp32 table back. Used when the fast path turns itself off before training, and
+    after training only with SOUP_KERNELS_RESTORE_TABLE=1 (see `_restore_callback`)."""
     lm = _causal_lm(model)
     stored = getattr(lm, "_soup_fp16_table", None)
     if stored is None:
@@ -740,11 +742,20 @@ def restore_t4_triton_patches(model) -> None:
 
 
 def _restore_callback(model):
+    """After training the fp16 table stays (phase 4) unless SOUP_KERNELS_RESTORE_TABLE=1.
+
+    After `trainer.train()` Soup only checks the trainable (LoRA) weights for finiteness and
+    saves the adapter, which holds no embedding; the last checkpoint is written before
+    on_train_end anyway. Rebuilding the 890 MiB fp32 table there needs a fresh contiguous block
+    at the most fragmented moment of the run, which can grow PyTorch's reserved memory past the
+    training peak: on a T4, phase 4's lighter activations gave 2687 MiB over 20 steps but the
+    full run with the rebuild still peaked at 2837 MiB."""
     from transformers import TrainerCallback
 
     class RestoreTable(TrainerCallback):
         def on_train_end(self, args, state, control, **kwargs):
-            restore_t4_triton_patches(model)
+            if _runtime.RESTORE_TABLE:
+                restore_t4_triton_patches(model)
 
     return RestoreTable()
 
@@ -807,5 +818,5 @@ def _wrapped_train(self, *args, **kwargs):
     try:
         return _ORIGINALS["train"](self, *args, **kwargs)
     finally:
-        if prepared:
+        if prepared and _runtime.RESTORE_TABLE:
             restore_t4_triton_patches(model)

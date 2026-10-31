@@ -480,3 +480,26 @@ def test_nf4_dequant_kernel_matches_reference_math():
     codes = torch.stack(((packed >> 4).long(), (packed & 15).long()), 1).reshape(-1)
     want = (nf4[codes] * scale.repeat_interleave(64)).to(torch.float16)
     assert torch.equal(out, want)
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_fp32_table_rebuilt_after_training_only_on_request(restore, monkeypatch):
+    """Phase 4: when training ends the fp16 table stays (Soup only saves the adapter after
+    that); SOUP_KERNELS_RESTORE_TABLE=1 brings back the old rebuild of the fp32 table."""
+    from solution import _runtime
+    from solution.patches import patch_qwen as pm
+
+    calls = []
+    monkeypatch.setattr(_runtime, "RESTORE_TABLE", restore)
+    monkeypatch.setattr(pm, "restore_t4_triton_patches", calls.append)
+    model = torch.nn.Linear(2, 2)
+    pm._restore_callback(model).on_train_end(None, None, None)
+
+    class Wrapper:
+        def __init__(self):
+            self.model, self.trainer = model, None
+
+    monkeypatch.setitem(pm._ORIGINALS, "train", lambda self: "trained")
+    monkeypatch.setattr(pm, "apply_t4_triton_patches", lambda m: {})
+    assert pm._wrapped_train(Wrapper()) == "trained"
+    assert calls == ([model, model] if restore else [])
